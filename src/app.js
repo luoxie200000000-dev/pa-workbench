@@ -242,7 +242,9 @@ let state = {
   cstcloudConfig: { endpoint: '', bucket: '', accessKey: '', secretKey: '', region: 'us-east-1' },
   localFileHandle: null,
   localFileName: "",
-  xiuxian: null
+  xiuxian: null,
+  // 视图模式：'auto'(按窗口宽度自动) | 'mobile'(强制手机布局) | 'desktop'(强制桌面布局)
+  uiMode: (function(){ try { return localStorage.getItem('uiMode') || 'auto'; } catch(e) { return 'auto'; } })()
 };
 
 // ===== 可序列化状态辅助函数 =====
@@ -1314,6 +1316,46 @@ function updateSyncModal() {
   var lastPush = state.cloudLastPush ? new Date(state.cloudLastPush).toLocaleString('zh-CN') : '从未';
   var lastPull = state.cloudLastPull ? new Date(state.cloudLastPull).toLocaleString('zh-CN') : '从未';
   var configured = cfg.endpoint && cfg.accessKey;
+  var isMobile = isMobileUI();
+  // 手机端默认显示上传 tab
+  if (!window._cloudSyncMobileTab) window._cloudSyncMobileTab = 'up';
+  var mtab = window._cloudSyncMobileTab || 'up';
+
+  var sectionHtml = '';
+  if (isMobile) {
+    // 手机端：Tab 切换上传/下载栏目
+    var upActive = mtab === 'up' ? ' style="background:var(--primary);color:#fff"' : '';
+    var dlActive = mtab === 'dl' ? ' style="background:var(--primary);color:#fff"' : '';
+    sectionHtml =
+      '<div style="font-size:14px;font-weight:700;margin-bottom:10px">云同步设置（上传 / 下载栏目分开选择）</div>' +
+      '<div style="display:flex;gap:0;margin-bottom:10px;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)">' +
+      '<button class="btn" data-click="__dcSwitchSyncTab" data-click-args="[&quot;up&quot;]" style="flex:1;border-radius:0;border:none;padding:8px"' + upActive + '>上传栏目</button>' +
+      '<button class="btn" data-click="__dcSwitchSyncTab" data-click-args="[&quot;dl&quot;]" style="flex:1;border-radius:0;border:none;padding:8px"' + dlActive + '>下载栏目</button>' +
+      '</div>' +
+      '<div style="font-size:13px;font-weight:600;color:var(--primary-darker);margin-bottom:6px">' + (mtab === 'up' ? '自动上传栏目' : '自动下载栏目') + '（勾选后可展开选班级）</div>' +
+      renderCloudSectionTree(mtab, mtab === 'up' ? state.cloudUploadSections : state.cloudDownloadSections, mtab === 'up' ? state.cloudUploadSectionClasses : state.cloudDownloadSectionClasses) +
+      '<div style="display:flex;gap:8px;margin-top:14px">' +
+      '<button class="btn btn-primary" data-click="manualCloudPush" style="flex:1"' + (configured ? '' : ' disabled') + '>上传到云端</button>' +
+      '<button class="btn btn-outline" data-click="manualCloudPull" style="flex:1"' + (configured ? '' : ' disabled') + '>从云端下载</button>' +
+      '</div>';
+  } else {
+    // 桌面端：两棵树并排
+    sectionHtml =
+      '<div style="font-size:14px;font-weight:700;margin-bottom:10px">云同步设置（上传 / 下载栏目分开选择）</div>' +
+      '<div style="margin-bottom:12px">' +
+      '<div style="font-size:13px;font-weight:600;color:var(--primary-darker);margin-bottom:6px">自动上传栏目（勾选后可展开选班级）</div>' +
+      renderCloudSectionTree('up', state.cloudUploadSections, state.cloudUploadSectionClasses) +
+      '</div>' +
+      '<div style="margin-bottom:12px">' +
+      '<div style="font-size:13px;font-weight:600;color:var(--primary-darker);margin-bottom:6px">自动下载栏目（勾选后可展开选班级）</div>' +
+      renderCloudSectionTree('dl', state.cloudDownloadSections, state.cloudDownloadSectionClasses) +
+      '</div>' +
+      '<div style="display:flex;gap:8px">' +
+      '<button class="btn btn-primary" data-click="manualCloudPush" style="flex:1"' + (configured ? '' : ' disabled') + '>上传到云端</button>' +
+      '<button class="btn btn-outline" data-click="manualCloudPull" style="flex:1"' + (configured ? '' : ' disabled') + '>从云端下载</button>' +
+      '</div>';
+  }
+
   body.innerHTML =
     '<div style="background:var(--primary-lightest);border-radius:var(--radius);padding:14px;margin-bottom:16px">' +
     '<div style="font-size:14px;font-weight:700;margin-bottom:10px;color:var(--primary-darker)">S3 配置（数据胶囊）</div>' +
@@ -1331,19 +1373,7 @@ function updateSyncModal() {
     '</div>' +
     '</div>' +
     '<div style="background:var(--bg-secondary);border-radius:var(--radius);padding:14px;margin-bottom:16px">' +
-    '<div style="font-size:14px;font-weight:700;margin-bottom:10px">云同步设置（上传 / 下载栏目分开选择）</div>' +
-    '<div style="margin-bottom:12px">' +
-    '<div style="font-size:13px;font-weight:600;color:var(--primary-darker);margin-bottom:6px">自动上传栏目（勾选后可展开选班级）</div>' +
-    renderCloudSectionTree('up', state.cloudUploadSections, state.cloudUploadSectionClasses) +
-    '</div>' +
-    '<div style="margin-bottom:12px">' +
-    '<div style="font-size:13px;font-weight:600;color:var(--primary-darker);margin-bottom:6px">自动下载栏目（勾选后可展开选班级）</div>' +
-    renderCloudSectionTree('dl', state.cloudDownloadSections, state.cloudDownloadSectionClasses) +
-    '</div>' +
-    '<div style="display:flex;gap:8px">' +
-    '<button class="btn btn-primary" data-click="manualCloudPush" style="flex:1"' + (configured ? '' : ' disabled') + '>上传到云端</button>' +
-    '<button class="btn btn-outline" data-click="manualCloudPull" style="flex:1"' + (configured ? '' : ' disabled') + '>从云端下载</button>' +
-    '</div>' +
+    sectionHtml +
     '</div>' +
     '<div style="background:var(--bg-secondary);border-radius:var(--radius);padding:14px;margin-bottom:16px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center">' +
@@ -2482,6 +2512,65 @@ const PARENT_PAGES = {
 // 学生工作任务页面免密，其他栏目需要密码验证
 const PASSWORD_EXEMPT_PAGES = ['st-task-info', 'st-random', 'st-homework', 'st-chat'];
 
+// ── 手机端底部导航 Tab → 子栏目映射 ──
+const MOBILE_SECTIONS = {
+  center: {
+    title: '\u6d3e\u5927\u661f\u7684\u7edf\u7b79\u4e2d\u5fc3',
+    icon: '\ud83d\udccb',
+    items: [
+      {page:'tasks', icon:'\ud83d\udccb', label:'任务清单'},
+      {page:'plan', icon:'\ud83d\udcdd', label:'教学计划'},
+      {page:'schedule', icon:'\ud83d\udcc5', label:'智能课程表'},
+      {page:'progress', icon:'\ud83d\udcca', label:'教学进度'}
+    ]
+  },
+  students: {
+    title: '\u5b66\u751f\u65e5\u5e38\u7ba1\u7406',
+    icon: '\ud83c\udf93',
+    groups: [
+      {label:'\u6863\u6848\u603b\u5e93', items:[
+        {page:'students', icon:'\ud83c\udf93', label:'学生档案总库'}
+      ]},
+      {label:'\u5b66\u751f\u5de5\u4f5c\u4efb\u52a1', collapsible:true, defaultOpen:false, items:[
+        {page:'st-task-info', icon:'\ud83d\udcdd', label:'01 任务信息'},
+        {page:'st-homework', icon:'\ud83d\udccb', label:'02 作业登记'},
+        {page:'st-chat', icon:'\ud83d\udcac', label:'03 聊天框'},
+        {page:'st-random', icon:'\ud83c\udfb2', label:'04 随机抽查'}
+      ]},
+      {label:'\u5b66\u60c5\u5206\u6790', collapsible:true, defaultOpen:false, items:[
+        {page:'hw-analysis', icon:'\ud83d\udcca', label:'01 作业分析'},
+        {page:'score-analysis', icon:'\ud83c\udfaf', label:'02 成绩分析'},
+        {page:'dashboard', icon:'\ud83d\udcc8', label:'03 学情看板'}
+      ]}
+    ]
+  },
+  xiuxian: {
+    title: '\u751f\u7269\u4ed9\u9014\u79d8\u5883',
+    icon: '\ud83e\uddec',
+    items: [
+      {page:'xiuxian-archive', icon:'\ud83d\udcd6', label:'修仙档案总库'},
+      {page:'xiuxian-tasks', icon:'\ud83d\udcdc', label:'修仙任务系统'},
+      {page:'xiuxian-rank', icon:'\ud83c\udfc6', label:'修仙排行榜单'},
+      {page:'xiuxian-pool', icon:'\ud83c\udfb4', label:'修仙角色体质'}
+    ]
+  },
+  tools: {
+    title: '\u5feb\u6377\u5de5\u5177',
+    icon: '\ud83d\udd27',
+    items: [
+      {page:'automation', icon:'\u23f0', label:'自动化提醒'},
+      {page:'skill-links', icon:'\ud83d\udd17', label:'Skill链接'},
+      {page:'ima-link', icon:'\ud83e\udde0', label:'IMA链接入口'},
+      {page:'daily-quiz', icon:'\ud83d\udcda', label:'每日练习'},
+      {action:'showRuntimeStatus', icon:'\ud83d\udcca', label:'运行状态'},
+      {action:'openDataManager', icon:'\ud83d\udce6', label:'数据导入合并'},
+      {action:'syncQuick', icon:'\u2601\ufe0f', label:'云同步'}
+    ]
+  }
+};
+// 折叠状态：groupKey → boolean
+var _mobileGroupCollapsed = {};
+
 function navigateTo(page) {
   console.log('[navigateTo] START page=', page, 'current=', (state||{}).currentPage, 'passwordUnlocked=', (state||{}).passwordUnlocked, 'hasPassword=', !!(state||{}).appPassword);
   // Password check: exempt student task pages
@@ -2522,6 +2611,58 @@ function closeSidebar() {
   const ov = document.getElementById('sidebarOverlay');
   if (sb) sb.classList.remove('open');
   if (ov) ov.classList.remove('show');
+}
+
+/* ===== 桌面 / 手机 App 模式切换 ===== */
+function isMobileUI() {
+  if (state.uiMode === 'mobile') return true;
+  if (state.uiMode === 'desktop') return false;
+  return window.innerWidth <= 768;
+}
+function updateUiModeBtn() {
+  var btn = document.getElementById('uiModeBtn');
+  if (!btn) return;
+  var icon = document.getElementById('uiModeIcon');
+  var text = document.getElementById('uiModeText');
+  if (state.uiMode === 'mobile') { if (icon) icon.textContent = '📱'; if (text) text.textContent = '手机'; }
+  else if (state.uiMode === 'desktop') { if (icon) icon.textContent = '💻'; if (text) text.textContent = '桌面'; }
+  else { if (icon) icon.textContent = '🔄'; if (text) text.textContent = '自动'; }
+}
+function applyUiMode(opts) {
+  opts = opts || {};
+  var mobile = isMobileUI();
+  var root = document.documentElement;
+  var wasMobile = root.classList.contains('ui-mobile');
+  if (mobile) root.classList.add('ui-mobile'); else root.classList.remove('ui-mobile');
+  updateUiModeBtn();
+  if (opts.rerender && (mobile !== wasMobile)) renderPage();
+}
+function cycleUiMode() {
+  state.uiMode = state.uiMode === 'auto' ? 'mobile' : (state.uiMode === 'mobile' ? 'desktop' : 'auto');
+  try { localStorage.setItem('uiMode', state.uiMode); } catch(e) {}
+  applyUiMode({ rerender: true });
+}
+
+/* ===== 桌面侧栏收起/展开 ===== */
+function toggleSidebarCollapse() {
+  var sb = document.getElementById('sidebar');
+  if (!sb) return;
+  var collapsed = sb.classList.toggle('collapsed');
+  try { localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0'); } catch(e) {}
+  updateSidebarCollapseBtn();
+}
+function updateSidebarCollapseBtn() {
+  var btn = document.getElementById('sidebarCollapseBtn');
+  var sb = document.getElementById('sidebar');
+  if (!btn || !sb) return;
+  btn.textContent = sb.classList.contains('collapsed') ? '›' : '‹';
+}
+function applySidebarCollapse() {
+  var collapsed = false;
+  try { collapsed = localStorage.getItem('sidebarCollapsed') === '1'; } catch(e) {}
+  var sb = document.getElementById('sidebar');
+  if (sb && collapsed) sb.classList.add('collapsed');
+  updateSidebarCollapseBtn();
 }
 
 /* Password Protection */
@@ -4950,6 +5091,14 @@ function renderStudents(container) {
     layerOptions = ['A','B','C','D'].map(l => `<option value="${l}">${l}层</option>`).join('');
   }
 
+  const IS_M = isMobileUI();
+  const classTabsHTML = IS_M ? (
+    '<div class="mbn-class-tabs" id="classTabs">' +
+      '<div class="mbn-class-tab ' + (classFilter===''?'active':'') + '" data-click="onClassFilterChange" data-click-args="[&quot;&quot;]">全部</div>' +
+      getClasses().map(function(c){ return '<div class="mbn-class-tab ' + (classFilter===c?'active':'') + '" data-click="onClassFilterChange" data-click-args="[&quot;' + c + '&quot;]">' + escapeHtml(c) + '</div>'; }).join('') +
+    '</div>'
+  ) : '';
+  const expandAllHTML = IS_M ? ('<button class="btn btn-outline" id="studentExpandAllBtn" data-click="toggleAllStudentCards">' + studentExpandAllLabel() + '</button>') : '';
   container.innerHTML = `
     <div class="stats-row">
       <div class="stat-card"><span class="stat-icon">🎓</span><div class="stat-num">${showStudents.length}</div><div class="stat-label">学生总数</div></div>
@@ -4960,12 +5109,13 @@ function renderStudents(container) {
       <div class="layer-toggle ${isScoreMode?'':'active'}" data-click="switchLayerMode" data-click-args="[&quot;class&quot;]">📊 班级分层 <span style="font-size:10px;color:var(--text-muted)">(排名)</span></div>
       <div class="layer-toggle ${isScoreMode?'active':''}" data-click="switchLayerMode" data-click-args="[&quot;score&quot;]">🎯 成绩分层 <span style="font-size:10px;color:var(--text-muted)">(分数)</span></div>
     </div>
+    ${classTabsHTML}
     <div class="toolbar">
       <div class="search-bar" style="flex:1;margin-bottom:0">
-        <select class="form-select" id="classFilter" data-ev="change" data-ev-key="ev25" style="width:120px">
+        ${IS_M ? '' : `<select class="form-select" id="classFilter" data-ev="change" data-ev-key="ev25" style="width:120px">
           <option value="">全部班级</option>
           ${getClasses().map(c => `<option value="${c}" ${classFilter===c?'selected':''}>${c}</option>`).join('')}
-        </select>
+        </select>`}
         <input type="text" class="search-input" id="studentSearch" value="${escapeHtml(state.studentSearchQuery)}" placeholder="姓名/学号检索..." data-ev="input" data-ev-key="ev26">
         <select class="form-select" id="layerFilter" data-ev="change" data-ev-key="ev27" style="width:100px">
           <option value="">全部分层</option>
@@ -4973,6 +5123,7 @@ function renderStudents(container) {
         </select>
       </div>
       <div class="flex-between gap-8">
+        ${expandAllHTML}
         <button class="btn btn-outline" data-click="downloadStudentTemplate">⬇️ 模板</button>
         <button class="btn btn-primary" data-click="__dcClickEl" data-click-args="[&quot;studentUpload&quot;]">📤 上传</button>
         <input type="file" id="studentUpload" accept=".csv" style="display:none" data-ev="change" data-ev-key="ev28">
@@ -5029,27 +5180,74 @@ function renderStudentGrid(students) {
     grid.innerHTML = '<div class="empty-state"><span class="emoji">📭</span>未找到匹配学生</div>';
     return;
   }
-  grid.innerHTML = students.map(s => `
-    <div class="student-card-item layer-${getLayerBadgeClass(s)}" data-click="openStudentProfile" data-click-args="[&quot;${s.id}&quot;]">
-      <div style="display:flex;justify-content:space-between;align-items:start">
-        <div>
-          <div class="student-card-name">${escapeHtml(s.name)} <span class="text-muted text-sm">${escapeHtml(s.studentNo)}</span></div>
-          <div class="student-card-info">${escapeHtml(s.classId)} · ${escapeHtml(s.gender)} · ${escapeHtml(s.scoreTrend)}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span class="layer-badge ${getLayerBadgeClass(s)}">${getStudentLayer(s)}层</span>
-        </div>
-      </div>
-      <div class="student-card-tags">
-        ${s.tags.map(t => `<span class="tag tag-normal">${escapeHtml(t)}</span>`).join('')}
-      </div>
-      <div style="margin-top:10px;display:flex;gap:10px;font-size:11px;color:var(--text-muted)">
-        <span>✅ 优${s.homeworkStats.excellent}</span>
-        <span>📝 完${s.homeworkStats.normal}</span>
-        <span style="color:var(--danger)">❌ 未${s.homeworkStats.incomplete}</span>
-      </div>
-    </div>
-  `).join('');
+  const IS_M = isMobileUI();
+  const expandedSet = window._studentExpanded || (window._studentExpanded = {});
+  grid.innerHTML = students.map(s => {
+    const badgeClass = getLayerBadgeClass(s);
+    const layer = getStudentLayer(s);
+    if (IS_M) {
+      const expanded = !!expandedSet[s.id];
+      const cardCls = 'student-card-item layer-' + badgeClass + (expanded ? ' m-expanded' : ' m-compact');
+      return '<div class="' + cardCls + '" data-click="toggleStudentCard" data-click-args="[&quot;' + s.id + '&quot;]">'
+        + '<div style="display:flex;justify-content:space-between;align-items:start">'
+          + '<div>'
+            + '<div class="student-card-name">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
+            + '<div class="student-card-info">' + escapeHtml(s.classId) + ' · ' + escapeHtml(s.gender) + ' · ' + escapeHtml(s.scoreTrend) + '</div>'
+          + '</div>'
+          + '<div><span class="layer-badge ' + badgeClass + '">' + layer + '层</span></div>'
+        + '</div>'
+        + '<div class="student-card-tags">' + s.tags.map(function(t){ return '<span class="tag tag-normal">' + escapeHtml(t) + '</span>'; }).join('') + '</div>'
+        + '<div class="m-hw" style="margin-top:10px;display:flex;gap:10px;font-size:11px;color:var(--text-muted)">'
+          + '<span>✅ 优' + s.homeworkStats.excellent + '</span>'
+          + '<span>📝 完' + s.homeworkStats.normal + '</span>'
+          + '<span style="color:var(--danger)">❌ 未' + s.homeworkStats.incomplete + '</span>'
+        + '</div>'
+        + '<button class="m-detail-btn" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]">📋 详情</button>'
+      + '</div>';
+    }
+    return '<div class="student-card-item layer-' + badgeClass + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]">'
+      + '<div style="display:flex;justify-content:space-between;align-items:start">'
+        + '<div>'
+          + '<div class="student-card-name">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
+          + '<div class="student-card-info">' + escapeHtml(s.classId) + ' · ' + escapeHtml(s.gender) + ' · ' + escapeHtml(s.scoreTrend) + '</div>'
+        + '</div>'
+        + '<div style="display:flex;align-items:center;gap:6px"><span class="layer-badge ' + badgeClass + '">' + layer + '层</span></div>'
+      + '</div>'
+      + '<div class="student-card-tags">' + s.tags.map(function(t){ return '<span class="tag tag-normal">' + escapeHtml(t) + '</span>'; }).join('') + '</div>'
+      + '<div style="margin-top:10px;display:flex;gap:10px;font-size:11px;color:var(--text-muted)">'
+        + '<span>✅ 优' + s.homeworkStats.excellent + '</span>'
+        + '<span>📝 完' + s.homeworkStats.normal + '</span>'
+        + '<span style="color:var(--danger)">❌ 未' + s.homeworkStats.incomplete + '</span>'
+      + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+// 学生卡片（手机端）展开/收起 + 全部展开/收起
+function studentExpandAllLabel() {
+  var set = window._studentExpanded || {};
+  var list = filterStudents(state.studentSearchQuery);
+  var anyExpanded = list.some(function(s){ return set[s.id]; });
+  return anyExpanded ? '⊟ 收起全部' : '⊞ 展开全部';
+}
+function updateStudentExpandAllLabel() {
+  var btn = document.getElementById('studentExpandAllBtn');
+  if (btn) btn.textContent = studentExpandAllLabel();
+}
+function toggleStudentCard(id) {
+  var el = this;
+  var set = window._studentExpanded || (window._studentExpanded = {});
+  if (set[id]) { delete set[id]; if (el) { el.classList.remove('m-expanded'); el.classList.add('m-compact'); } }
+  else { set[id] = true; if (el) { el.classList.add('m-expanded'); el.classList.remove('m-compact'); } }
+  updateStudentExpandAllLabel();
+}
+function toggleAllStudentCards() {
+  var set = window._studentExpanded || (window._studentExpanded = {});
+  var list = filterStudents(state.studentSearchQuery);
+  var anyExpanded = list.some(function(s){ return set[s.id]; });
+  if (anyExpanded) { list.forEach(function(s){ delete set[s.id]; }); }
+  else { list.forEach(function(s){ set[s.id] = true; }); }
+  renderStudentGrid(list);
 }
 
 function openStudentProfile(id) {
@@ -9304,6 +9502,8 @@ async function initApp() {
           console.warn('Failed to parse Electron data:', e);
         }
       }
+      applyUiMode();
+      applySidebarCollapse();
       navigateTo(state.currentPage || 'tasks');
     }).catch(e => {
       console.warn('No local data file yet');
@@ -9341,6 +9541,9 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('sidebarOverlay').classList.toggle('show');
   });
   document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
+  window.addEventListener('resize', function() {
+    if (state.uiMode === 'auto') applyUiMode({ rerender: true });
+  });
 });
 
 
@@ -11242,11 +11445,14 @@ var _exportMap = {
   syncProgressFromSchedule: syncProgressFromSchedule,
   // 学生
   openStudentProfile: openStudentProfile,
+  cycleUiMode: cycleUiMode,
+  toggleSidebarCollapse: toggleSidebarCollapse,
   toggleStudentTag: toggleStudentTag,
   saveStudentProfile: saveStudentProfile,
   downloadStudentTemplate: downloadStudentTemplate,
   handleStudentUpload: handleStudentUpload,
   onClassFilterChange: onClassFilterChange,
+  toggleStudentCard: toggleStudentCard, toggleAllStudentCards: toggleAllStudentCards,
   onStudentSearch: onStudentSearch,
   switchLayerMode: switchLayerMode,
   openClassRankTrend: openClassRankTrend,
@@ -11517,6 +11723,9 @@ const __CLICK = {
   openScoreEntryModal: openScoreEntryModal,
   openStudentEditor: openStudentEditor,
   openStudentProfile: openStudentProfile,
+  cycleUiMode: cycleUiMode,
+  toggleSidebarCollapse: toggleSidebarCollapse,
+  toggleStudentCard: toggleStudentCard, toggleAllStudentCards: toggleAllStudentCards,
   openSyncModal: openSyncModal,
   openTaskInfoEditModal: openTaskInfoEditModal,
   openTaskModal: openTaskModal,
@@ -11634,8 +11843,132 @@ const __CLICK = {
   xiuxianToggleAutoStoneConvert: xiuxianToggleAutoStoneConvert,
   xiuxianUnequipOutfit: xiuxianUnequipOutfit,
   xiuxianUnequipWeapon: xiuxianUnequipWeapon,
-  xiuxianWeeklyRoutine: xiuxianWeeklyRoutine
+  xiuxianWeeklyRoutine: xiuxianWeeklyRoutine,
+  __dcMbnTab: __dcMbnTab,
+  closeMobileSubnav: closeMobileSubnav,
+  __dcMbnItem: __dcMbnItem,
+  __dcMbnToggleGroup: __dcMbnToggleGroup,
+  __dcSwitchSyncTab: __dcSwitchSyncTab
 };
+function __dcMbnTab(args, e, el) {
+  var gid = args && args[0]; if (!gid) return;
+  renderMobileSubnav(gid);
+}
+function __dcMbnItem(args, e, el) {
+  closeMobileSubnav();
+  // If it's a page, navigate; if it's an action, handle
+  var page = args && args[0], action = args && args[1];
+  if (action === 'syncQuick') { openSyncModal(); return; }
+  if (action === 'showRuntimeStatus') { showRuntimeStatus(); return; }
+  if (action === 'openDataManager') { openDataManager(); return; }
+  if (page) navigateTo(page);
+}
+function __dcMbnToggleGroup(args, e, el) {
+  var gkey = args && args[0]; if (!gkey) return;
+  // 统一用 window 上的对象，确保和 renderMobileSubnav 读写一致
+  var collapsed = window._mobileGroupCollapsed || (window._mobileGroupCollapsed = {});
+  collapsed[gkey] = !collapsed[gkey];
+  renderMobileSubnav(window._mobileCurrentTab || 'center');
+}
+function __dcSwitchSyncTab(args, e, el) {
+  var tab = args && args[0]; if (!tab || (tab !== 'up' && tab !== 'dl')) return;
+  window._cloudSyncMobileTab = tab;
+  updateSyncModal();
+}
+function closeMobileSubnav() {
+  var overlay = document.getElementById('mobileSubnavOverlay');
+  var panel = document.getElementById('mobileSubnavPanel');
+  if (overlay) { overlay.classList.remove('open'); overlay.setAttribute('aria-hidden','true'); }
+  if (panel) { panel.classList.remove('open'); panel.setAttribute('aria-hidden','true'); }
+  window._mobileCurrentTab = null;
+}
+function renderMobileSubnav(gid) {
+  var sec = MOBILE_SECTIONS[gid]; if (!sec) return;
+  window._mobileCurrentTab = gid;
+  // Update active tab
+  document.querySelectorAll('.mbn-tab').forEach(function(t) {
+    t.classList.toggle('active', t.getAttribute('data-mbn') === gid);
+  });
+  // Set title
+  var titleEl = document.getElementById('mobileSubnavTitle');
+  if (titleEl) titleEl.textContent = sec.title;
+  // Build list
+  var listEl = document.getElementById('mobileSubnavList');
+  if (!listEl) return;
+  var html = '';
+  function itemHtml(it) {
+    var icon = it.icon || '', label = it.label || '';
+    var args = escapeAttr(JSON.stringify([it.page || '', it.action || '']));
+    return '<div class="mobile-subnav-item" data-click="__dcMbnItem" data-click-args="' + args + '">' +
+      '<span class="nav-icon">' + escapeHtml(icon) + '</span>' +
+      '<span class="nav-label">' + escapeHtml(label) + '</span>' +
+      '<span class="nav-arrow">⟩</span></div>';
+  }
+  function groupHtml(g, gidx) {
+    var gkey = gid + '-' + gidx;
+    var collapsedMap = window._mobileGroupCollapsed || (window._mobileGroupCollapsed = {});
+    var collapsed = collapsedMap[gkey];
+    // default: if collapsible and defaultOpen=false, collapsed if not explicitly set
+    if (collapsed === undefined) collapsed = g.collapsible && !g.defaultOpen;
+    var arrow = collapsed ? '▶' : '▼';
+    var toggleArgs = escapeAttr(JSON.stringify([gkey]));
+    var h = '';
+    if (g.label) {
+      h += '<div class="mobile-subnav-group-header" data-click="__dcMbnToggleGroup" data-click-args="' + toggleArgs + '">' +
+        '<span class="group-label">' + escapeHtml(g.label) + '</span>' +
+        '<span class="group-count">(' + g.items.length + ')</span>' +
+        '<span class="group-arrow">' + arrow + '</span></div>';
+    }
+    if (!collapsed) {
+      h += '<div class="mobile-subnav-group-items">';
+      for (var j = 0; j < g.items.length; j++) { h += itemHtml(g.items[j]); }
+      h += '</div>';
+    }
+    return h;
+  }
+  if (sec.groups) {
+    for (var i = 0; i < sec.groups.length; i++) { html += groupHtml(sec.groups[i], i); }
+  } else if (sec.items) {
+    for (var k = 0; k < sec.items.length; k++) { html += itemHtml(sec.items[k]); }
+  }
+  listEl.innerHTML = html;
+  // Show panel
+  var overlay = document.getElementById('mobileSubnavOverlay');
+  var panel = document.getElementById('mobileSubnavPanel');
+  if (overlay) { overlay.classList.add('open'); overlay.setAttribute('aria-hidden','false'); }
+  if (panel) { panel.classList.add('open'); panel.setAttribute('aria-hidden','false'); }
+}
+// ── 长按 tooltip：顶栏按钮在手机上长按显示完整名称 ──
+(function() {
+  var timer = null, tip = null;
+  function showTip(x, y, text) {
+    if (!text) return;
+    if (!tip) { tip = document.createElement('div'); tip.className = 'mobile-tooltip'; document.body.appendChild(tip); }
+    tip.textContent = text;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    tip.style.display = 'block';
+  }
+  function hideTip() {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (tip) tip.style.display = 'none';
+  }
+  document.addEventListener('touchstart', function(e) {
+    var el = e.target.closest && e.target.closest('.save-btn,.sync-indicator,.status-btn,.theme-btn');
+    if (!el) return;
+    var title = el.getAttribute('title') || el.getAttribute('data-title') || '';
+    if (!title) return;
+    var touch = e.touches[0];
+    timer = setTimeout(function() {
+      showTip(touch.pageX, touch.pageY - 30, title);
+    }, 500);
+  }, {passive: true});
+  document.addEventListener('touchend', hideTip);
+  document.addEventListener('touchcancel', hideTip);
+  document.addEventListener('touchmove', function(e) {
+    if (timer) { clearTimeout(timer); timer = null; }
+  }, {passive: true});
+})();
 function __dcOpenTaskFromClose(args, e, el) { closeModal(); openTaskModal(args[0]); }
 function __dcDeleteTaskClose(args, e, el) { deleteTask(args[0]); closeModal(); }
 function __dcCloseEditPlan(args, e, el) { closeModal(); openEditPlanModal(args[0]); }

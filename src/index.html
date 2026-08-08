@@ -24,10 +24,11 @@
   <aside class="sidebar" id="sidebar" role="navigation" aria-label="主导航">
     <div class="sidebar-header">
       <div class="logo">🧽</div>
-      <div>
+      <div class="sidebar-title">
         <h1>派大星和海绵宝宝</h1>
         <p>教学工作台</p>
       </div>
+      <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" data-click="toggleSidebarCollapse" title="收起/展开侧栏">‹</button>
     </div>
     <nav class="sidebar-nav" id="sidebarNav">
       <div class="nav-category-header">派大星的统筹中心</div>
@@ -105,6 +106,9 @@
         <button class="theme-btn" data-click="toggleThemePanel" title="主题设置">
           <span style="font-size:14px">🎨</span><span>主题</span>
         </button>
+        <button class="mode-toggle-btn" id="uiModeBtn" data-click="cycleUiMode" title="切换桌面/手机模式（自动 ⇄ 手机 ⇄ 桌面）">
+          <span id="uiModeIcon">🔄</span><span id="uiModeText">自动</span>
+        </button>
         <div class="real-time-clock" id="realTimeClock">
           <div class="clock-time" id="clockTime">--:--:--</div>
           <div class="clock-date" id="clockDate">加载中...</div>
@@ -128,6 +132,10 @@
     <button class="mbn-tab" data-mbn="xiuxian" data-click="__dcMbnTab" data-click-args="[&quot;xiuxian&quot;]" title="生物仙途">
       <span class="mbn-icon">🧬</span>
       <span class="mbn-label">仙途</span>
+    </button>
+    <button class="mbn-tab" data-mbn="tools" data-click="__dcMbnTab" data-click-args="[&quot;tools&quot;]" title="快捷工具">
+      <span class="mbn-icon">🔧</span>
+      <span class="mbn-label">工具</span>
     </button>
   </nav>
 

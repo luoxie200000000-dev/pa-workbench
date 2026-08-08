@@ -10,6 +10,23 @@ src-tauri/gen/android/local.properties
 
 # Local data (sensitive / runtime)
 data/
+database/
+
+# Dev / temp scripts (CSP transform tooling)
+_*.py
+_*.txt
+preview-*.html
+fix_*.py
+screenshot-preview.*
+
+# Build logs
+src-tauri/*.log
+
+# Installers / archives (built separately)
+*.exe
+*.msi
+*.zip
+*.bat
 
 # IDE
 .vscode/
