@@ -1,0 +1,106 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - '.vscode/**'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-apk:
+    name: Build Android APK (${{ github.event.inputs.build_type || 'debug' }})
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- JDK 17 (required by Gradle 8.x / Tauri 2.x) ---
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # --- Android SDK ---
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0 ndk;27.1.12297006'
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      # --- Node ---
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # --- Rust ---
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      # --- System deps (needed for Tauri CLI on Linux) ---
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+
+      # --- Frontend deps ---
+      - name: Install npm dependencies
+        run: npm ci
+
+      # --- Init Android project ---
+      # gen/android/ is gitignored — always init fresh in CI
+      - name: Init Tauri Android project
+        run: |
+          npx tauri android init --skip-targets-install
+          # Ensure Gradle wrapper is executable
+          chmod +x src-tauri/gen/android/gradlew 2>/dev/null || true
+
+      # --- Build APK ---
+      - name: Build Android APK
+        env:
+          BUILD_TYPE: ${{ github.event.inputs.build_type || 'debug' }}
+        run: |
+          if [ "$BUILD_TYPE" = "release" ]; then
+            npx tauri android build --release
+          else
+            npx tauri android build --debug
+          fi
+
+      # --- Upload artifacts ---
+      - name: Upload APK (universal + per-arch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pa-workbench-android-${{ github.event.inputs.build_type || 'debug' }}
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 30
+
+      # --- Summary ---
+      - name: Build summary
+        run: |
+          echo "### ✅ APK 构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "下载上方 **Artifacts** 中的 \`pa-workbench-android-*\` zip 解压即可安装。" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 构建类型 | ${{ github.event.inputs.build_type || 'debug' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 提交 | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
