@@ -76,15 +76,17 @@ jobs:
           chmod +x src-tauri/gen/android/gradlew 2>/dev/null || true
 
       # --- Build APK ---
+      # 必须用 --debug：Tauri 默认打 release（未签名），Android 拒绝安装；
+      # --debug 会用调试密钥自动签名，产出可直接安装的包。
       - name: Build Android APK
         run: |
-          npx tauri android build --target aarch64
+          npx tauri android build --debug --target aarch64
 
       # --- Upload artifacts ---
-      - name: Upload APK (universal + per-arch)
+      - name: Upload APK (signed debug, single-arch)
         uses: actions/upload-artifact@v4
         with:
-          name: pa-workbench-android-${{ github.event.inputs.build_type || 'debug' }}
+          name: pa-workbench-android-debug
           path: |
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           retention-days: 30
@@ -92,9 +94,9 @@ jobs:
       # --- Summary ---
       - name: Build summary
         run: |
-          echo "### ✅ APK 构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ APK 构建完成（debug 自动签名，可直接安装）" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "下载上方 **Artifacts** 中的 \`pa-workbench-android-*\` zip 解压即可安装。" >> $GITHUB_STEP_SUMMARY
+          echo "下载上方 **Artifacts** 中的 \`pa-workbench-android-debug\` zip，解压得到 .apk 即可安装。" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 构建类型 | ${{ github.event.inputs.build_type || 'debug' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 构建类型 | debug（已签名） |" >> $GITHUB_STEP_SUMMARY
           echo "| 提交 | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
