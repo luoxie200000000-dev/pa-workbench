@@ -605,6 +605,7 @@ struct DbPathState {
 
 // ── Public entry point (used by both main.rs and Android lib) ─
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
         Migration {
