@@ -356,13 +356,27 @@ struct S3Config {
     region: String,
 }
 
-fn read_s3_config() -> Option<S3Config> {
-    let data_dir = get_data_dir()?;
-    let config_file = data_dir.join(S3_CONFIG_FILENAME);
-    if !config_file.exists() {
+/// S3 配置文件的真实路径。
+/// 关键：Android 上 get_data_dir() 因 current_exe() 父目录只读而返回 None，
+/// 故改用 app.path().app_config_dir()（所有平台均可写且稳定）。
+fn s3_config_file(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let base = app.path().app_config_dir().ok()?;
+    let dir = base.join(DATA_DIR_NAME);
+    fs::create_dir_all(&dir).ok()?;
+    Some(dir.join(S3_CONFIG_FILENAME))
+}
+
+/// 读取 S3 配置：优先新位置(app_config_dir)，回退旧位置(exe 同级 data 目录)，兼容桌面历史配置。
+fn read_s3_config(app: &tauri::AppHandle) -> Option<S3Config> {
+    let path = s3_config_file(app)
+        .or_else(|| {
+            let d = get_data_dir()?;
+            Some(d.join(S3_CONFIG_FILENAME))
+        })?;
+    if !path.exists() {
         return None;
     }
-    let content = fs::read_to_string(&config_file).ok()?;
+    let content = fs::read_to_string(&path).ok()?;
     let config: S3Config = serde_json::from_str(&content).ok()?;
     if config.endpoint.is_empty() || config.access_key.is_empty() {
         return None;
@@ -372,6 +386,7 @@ fn read_s3_config() -> Option<S3Config> {
 
 #[tauri::command]
 fn save_s3_config(
+    app: tauri::AppHandle,
     endpoint: String,
     bucket: String,
     access_key: String,
@@ -385,19 +400,18 @@ fn save_s3_config(
         secret_key,
         region: if region.is_empty() { "us-east-1".to_string() } else { region },
     };
-    let data_dir = get_data_dir().ok_or("无法获取 data 目录")?;
-    let config_file = data_dir.join(S3_CONFIG_FILENAME);
+    let config_file = s3_config_file(&app).ok_or("无法获取配置目录")?;
     let json = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(&config_file, json)
         .map_err(|e| format!("写入配置文件失败: {}", e))?;
-    eprintln!("[S3] 配置已保存到后端文件");
+    eprintln!("[S3] 配置已保存到 {:?}", config_file);
     Ok(())
 }
 
 #[tauri::command]
-fn get_s3_config_status() -> Option<serde_json::Value> {
-    let config = read_s3_config()?;
+fn get_s3_config_status(app: tauri::AppHandle) -> Option<serde_json::Value> {
+    let config = read_s3_config(&app)?;
     Some(serde_json::json!({
         "endpoint": config.endpoint,
         "bucket": config.bucket,
@@ -501,8 +515,8 @@ fn add_s3_headers(request: reqwest::RequestBuilder, host: &str, auth: &str, date
 }
 
 #[tauri::command]
-async fn s3_upload(object_key: String, data: String,) -> Result<String, String> {
-    let config = read_s3_config().ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
+async fn s3_upload(app: tauri::AppHandle, object_key: String, data: String,) -> Result<String, String> {
+    let config = read_s3_config(&app).ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
     let url = format!("{}/{}/{}", config.endpoint.trim_end_matches('/'), config.bucket, object_key);
     let parsed = reqwest::Url::parse(&url).map_err(|e| format!("URL parse error: {}", e))?;
     let host = parsed.host_str().ok_or("Invalid host")?;
@@ -528,8 +542,8 @@ async fn s3_upload(object_key: String, data: String,) -> Result<String, String> 
 }
 
 #[tauri::command]
-async fn s3_download(object_key: String,) -> Result<String, String> {
-    let config = read_s3_config().ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
+async fn s3_download(app: tauri::AppHandle, object_key: String,) -> Result<String, String> {
+    let config = read_s3_config(&app).ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
     let url = format!("{}/{}/{}", config.endpoint.trim_end_matches('/'), config.bucket, object_key);
     let parsed = reqwest::Url::parse(&url).map_err(|e| format!("URL parse error: {}", e))?;
     let host = parsed.host_str().ok_or("Invalid host")?;
@@ -556,8 +570,8 @@ async fn s3_download(object_key: String,) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn s3_test() -> Result<String, String> {
-    let config = read_s3_config().ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
+async fn s3_test(app: tauri::AppHandle) -> Result<String, String> {
+    let config = read_s3_config(&app).ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
     let url = format!("{}/{}?max-keys=1000&prefix=", config.endpoint.trim_end_matches('/'), config.bucket);
     let parsed = reqwest::Url::parse(&url).map_err(|e| format!("URL parse error: {}", e))?;
     let host = parsed.host_str().ok_or("Invalid host")?;
@@ -661,10 +675,13 @@ pub fn run() {
             let _legacy_db_url = compute_db_url(app);
 
             if let Some(window) = app.get_webview_window("main") {
-                let db_path_json = serde_json::to_string(&actual_db_path_str).unwrap_or_else(|_| "\"\"".to_string());
+                // 前端 Database.load 必须使用与迁移注册 key 完全一致的相对 URL，
+                // 否则插件解析出的文件路径与迁移 key 不匹配 → 建表脚本永不执行。
+                let db_url_json = serde_json::to_string("sqlite:workbuddy.db")
+                    .unwrap_or_else(|_| "\"sqlite:workbuddy.db\"".to_string());
                 let js = format!(
                     "window.__IS_TAURI_APP__ = true;\nwindow.__TAURI_DB_PATH__ = {};",
-                    db_path_json
+                    db_url_json
                 );
                 let _ = window.eval(&js);
             }
