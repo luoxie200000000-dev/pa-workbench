@@ -139,6 +139,7 @@ fn get_db_path(state: tauri::State<DbPathState>) -> String {
     state.path.to_string_lossy().to_string()
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn open_folder(path: String) -> Result<(), String> {
     let validated = validate_local_dir(&PathBuf::from(&path))
@@ -155,6 +156,12 @@ fn open_folder(path: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("打开文件夹失败: {}", e))?;
     Ok(())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn open_folder(_path: String) -> Result<(), String> {
+    Err("打开文件夹在 Android 上不支持".to_string())
 }
 
 #[cfg(not(target_os = "android"))]
