@@ -81,9 +81,9 @@ jobs:
           BUILD_TYPE: ${{ github.event.inputs.build_type || 'release' }}
         run: |
           if [ "$BUILD_TYPE" = "release" ]; then
-            npx tauri android build --release --target aarch64
+            npx tauri android build --target aarch64 -- --release
           else
-            npx tauri android build --debug --target aarch64
+            npx tauri android build --target aarch64 -- --debug
           fi
 
       # --- Upload artifacts ---
