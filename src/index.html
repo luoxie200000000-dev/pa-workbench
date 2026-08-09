@@ -108,6 +108,7 @@
         <button class="mode-toggle-btn" id="uiModeBtn" data-click="cycleUiMode" title="切换桌面/手机模式（自动 ⇄ 手机 ⇄ 桌面）">
           <span id="uiModeIcon">🔄</span><span id="uiModeText">自动</span>
         </button>
+        <button class="mobile-overflow-btn" id="mobileOverflowBtn" data-click="openMobileOverflow" title="更多操作" aria-label="更多操作">⋯</button>
         <div class="real-time-clock" id="realTimeClock">
           <div class="clock-time" id="clockTime">--:--:--</div>
           <div class="clock-date" id="clockDate">加载中...</div>
@@ -123,6 +124,7 @@
     <button class="mbn-tab active" data-mbn="center" data-click="__dcMbnTab" data-click-args="[&quot;center&quot;]" title="统筹中心">
       <span class="mbn-icon">📋</span>
       <span class="mbn-label">统筹</span>
+      <span class="mbn-badge" id="mbnBadge-center"></span>
     </button>
     <button class="mbn-tab" data-mbn="students" data-click="__dcMbnTab" data-click-args="[&quot;students&quot;]" title="学生管理">
       <span class="mbn-icon">🎓</span>
@@ -147,6 +149,19 @@
     </div>
     <div class="mobile-subnav-list" id="mobileSubnavList"></div>
   </div>
+
+  <!-- ===== 手机溢出操作面板（顶栏 ⋯ 触发） ===== -->
+  <div class="mobile-overflow-overlay" id="mobileOverflowOverlay" aria-hidden="true" data-click="closeMobileOverflow"></div>
+  <div class="mobile-overflow-panel" id="mobileOverflowPanel" aria-hidden="true">
+    <div class="mobile-overflow-header">
+      <span>更多操作</span>
+      <button class="mobile-subnav-close" data-click="closeMobileOverflow">✕</button>
+    </div>
+    <div class="mobile-overflow-list" id="mobileOverflowList"></div>
+  </div>
+
+  <!-- ===== 手机悬浮主操作 FAB ===== -->
+  <button class="mobile-fab fab-hidden" id="mobileFab" data-click="onMobileFab" aria-label="主操作">+</button>
 </div>
 <div id="modalContainer"></div>
 <div id="toastContainer"></div>

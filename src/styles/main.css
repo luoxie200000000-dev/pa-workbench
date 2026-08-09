@@ -2177,6 +2177,102 @@ a { color: var(--primary-dark); text-decoration: none; }
   }
 }
 
+/* ===================== Phase 0+1 手机组件规范（参考微信/QQ） ===================== */
+/* 顶部安全区：刘海屏下顶栏留白 */
+.ui-mobile .top-bar { padding-top: var(--safe-top); height: auto; min-height: 52px; }
+
+/* 顶栏溢出菜单按钮（仅手机显示） */
+.mobile-overflow-btn { display: none; }
+.ui-mobile .mobile-overflow-btn {
+  display: flex !important; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 50%; border: none;
+  background: var(--bg-hover); color: var(--text-body); font-size: 20px;
+  cursor: pointer; margin-left: 4px; -webkit-tap-highlight-color: transparent;
+}
+/* 手机顶栏只留 标题 + 溢出；隐藏其余按钮（微信式极简） */
+.ui-mobile .top-bar-right .save-btn,
+.ui-mobile .top-bar-right .sync-indicator,
+.ui-mobile .top-bar-right .status-btn,
+.ui-mobile .top-bar-right .theme-btn,
+.ui-mobile .top-bar-right .mode-toggle-btn,
+.ui-mobile .top-bar-right .real-time-clock { display: none !important; }
+
+/* 溢出面板（底部滑出，复用 subnav 视觉） */
+.mobile-overflow-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+.mobile-overflow-overlay.open { display: block; opacity: 1; pointer-events: auto; }
+.mobile-overflow-panel {
+  position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg-card);
+  border-radius: 16px 16px 0 0; z-index: 1001; transform: translateY(100%);
+  transition: transform 0.3s ease; display: flex; flex-direction: column;
+  padding-bottom: var(--safe-bottom); box-shadow: 0 -4px 20px rgba(0,0,0,0.15); max-height: 72vh;
+}
+.mobile-overflow-panel.open { transform: translateY(0); }
+.mobile-overflow-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border-light); font-size: 15px; font-weight: 700; color: var(--text-heading); }
+.mobile-overflow-item { display: flex; align-items: center; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--border-light); font-size: 15px; cursor: pointer; color: var(--text-body); -webkit-tap-highlight-color: transparent; }
+.mobile-overflow-item:active { background: var(--primary-lightest); }
+.mobile-overflow-item .of-icon { font-size: 20px; width: 28px; text-align: center; }
+.mobile-overflow-item .of-label { flex: 1; font-weight: 500; }
+
+/* 底部 TabBar 角标（待办数，微信式红点/数字） */
+.mbn-tab { position: relative; }
+.mbn-badge {
+  position: absolute; top: 1px; left: 50%; margin-left: 6px;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--danger); color: #fff; font-size: 10px; line-height: 16px;
+  text-align: center; font-weight: 700; display: none; z-index: 2;
+}
+.mbn-badge.show { display: block; }
+
+/* 全局手机列表行组件（全宽 / 头像 / 主副标题 / 右箭头，≥56px 点击区） */
+.m-list { background: var(--bg-card); border-radius: 12px; overflow: hidden; margin: 8px 0; border: 1px solid var(--border-light); }
+.m-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; background: var(--bg-card);
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer; -webkit-tap-highlight-color: transparent; min-height: 56px;
+}
+.m-row:last-child { border-bottom: none; }
+.m-row:active { background: var(--primary-lightest); }
+.m-row .m-avatar {
+  width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 600; color: #fff; background: var(--primary);
+}
+.m-row .m-body { flex: 1; min-width: 0; }
+.m-row .m-title { font-size: 15px; font-weight: 500; color: var(--text-heading); display: flex; align-items: center; gap: 6px; }
+.m-row .m-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-row .m-trail { flex-shrink: 0; color: var(--text-muted); font-size: 18px; line-height: 1; }
+.m-row .m-badge { flex-shrink: 0; font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg-hover); color: var(--text-muted); }
+.m-row .checkbox-box { width: 20px; height: 20px; flex-shrink: 0; accent-color: var(--primary); }
+.ui-mobile .m-row.completed .m-title { text-decoration: line-through; opacity: 0.55; }
+
+/* 手机弹窗变底部弹层（微信/QQ 表单从底部滑入） */
+.ui-mobile .modal-overlay { align-items: flex-end !important; justify-content: center; padding: 0 !important; }
+.ui-mobile .modal {
+  width: 100% !important; max-width: none !important;
+  border-radius: 16px 16px 0 0 !important; margin: 0 !important;
+  max-height: 90vh !important;
+  padding: 18px 16px calc(18px + var(--safe-bottom)) !important;
+  animation: sheetUp 0.3s ease;
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+/* 手机工具栏吸顶（搜索/筛选常驻可见） */
+.ui-mobile .toolbar { position: sticky; top: 0; z-index: 5; background: var(--bg-page); padding-top: 8px; padding-bottom: 8px; }
+
+/* 手机悬浮主操作 FAB（微信聊天列表「+」） */
+.mobile-fab { display: none; }
+.ui-mobile .mobile-fab.fab-hidden { display: none !important; }
+.ui-mobile .mobile-fab:not(.fab-hidden) {
+  display: flex !important; align-items: center; justify-content: center;
+  position: fixed; right: 16px; bottom: calc(72px + var(--safe-bottom) + 14px);
+  width: 54px; height: 54px; border-radius: 50%; border: none;
+  background: var(--primary); color: #fff; font-size: 30px; font-weight: 300; line-height: 1;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.28); z-index: 980; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ui-mobile .mobile-fab:not(.fab-hidden):active { transform: scale(0.94); }
+
 /* PWA standalone mode: extra top padding for status bar */
 @media (display-mode: standalone) {
   .top-bar {

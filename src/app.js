@@ -465,6 +465,8 @@ async function commitSave() {
 
   showToast('数据已保存到本地', 'success');
 
+  updateMobileTabBadges();
+
   // 存储空间配额检测
   var quota = await checkStorageQuota();
   if (quota.nearLimit) {
@@ -2635,12 +2637,93 @@ function applyUiMode(opts) {
   var wasMobile = root.classList.contains('ui-mobile');
   if (mobile) root.classList.add('ui-mobile'); else root.classList.remove('ui-mobile');
   updateUiModeBtn();
+  updateMobileFab();
   if (opts.rerender && (mobile !== wasMobile)) renderPage();
 }
 function cycleUiMode() {
   state.uiMode = state.uiMode === 'auto' ? 'mobile' : (state.uiMode === 'mobile' ? 'desktop' : 'auto');
   try { localStorage.setItem('uiMode', state.uiMode); } catch(e) {}
   applyUiMode({ rerender: true });
+}
+
+/* ===== 手机溢出菜单 / FAB / TabBar角标（Phase 0+1，参考微信/QQ） ===== */
+function openMobileOverflow() {
+  var items = [
+    { key:'save',   icon:'💾', label:'保存数据' },
+    { key:'sync',   icon:'☁️', label:'云端同步' },
+    { key:'status', icon:'📊', label:'运行状态' },
+    { key:'data',   icon:'📦', label:'数据导入合并' },
+    { key:'theme',  icon:'🎨', label:'主题设置' },
+    { key:'mode',   icon:'🔄', label:'切换桌面/手机' }
+  ];
+  var html = items.map(function(it){
+    var args = escapeAttr(JSON.stringify([it.key]));
+    return '<div class="mobile-overflow-item" data-click="__dcOverflow" data-click-args="'+args+'">' +
+      '<span class="of-icon">'+it.icon+'</span><span class="of-label">'+it.label+'</span></div>';
+  }).join('');
+  var list = document.getElementById('mobileOverflowList');
+  if (list) list.innerHTML = html;
+  var ov = document.getElementById('mobileOverflowOverlay');
+  var pn = document.getElementById('mobileOverflowPanel');
+  if (ov) { ov.classList.add('open'); ov.setAttribute('aria-hidden','false'); }
+  if (pn) { pn.classList.add('open'); pn.setAttribute('aria-hidden','false'); }
+}
+function closeMobileOverflow() {
+  var ov = document.getElementById('mobileOverflowOverlay');
+  var pn = document.getElementById('mobileOverflowPanel');
+  if (ov) { ov.classList.remove('open'); ov.setAttribute('aria-hidden','true'); }
+  if (pn) { pn.classList.remove('open'); pn.setAttribute('aria-hidden','true'); }
+}
+function __dcOverflow(args) {
+  var key = args && args[0];
+  closeMobileOverflow();
+  if (key==='save') commitSave();
+  else if (key==='sync') openSyncModal();
+  else if (key==='status') showRuntimeStatus();
+  else if (key==='data') openDataManager();
+  else if (key==='theme') toggleThemePanel();
+  else if (key==='mode') cycleUiMode();
+}
+
+/* 按页面主操作的 FAB 映射（微信聊天列表「+」式一键新增） */
+var MOBILE_FAB = {
+  students: openStudentEditor,
+  tasks: function(){ openTaskModal(); },
+  plan: openNewPlanModal,
+  schedule: function(){ if (typeof openScheduleSettings==='function') openScheduleSettings(); },
+  progress: openProgressModal,
+  'st-task-info': openTaskInfoEditModal,
+  'st-homework': function(){ if (typeof openHwReviewModal==='function') openHwReviewModal(); },
+  'xiuxian-archive': openStudentEditor,
+  'xiuxian-tasks': function(){ if (typeof xiuxianOpenBreakthrough==='function') xiuxianOpenBreakthrough(); },
+  'xiuxian-rank': function(){ if (typeof xiuxianOpenRank==='function') xiuxianOpenRank(); },
+  'xiuxian-pool': function(){ if (typeof xiuxianOpenWeapon==='function') xiuxianOpenWeapon(); },
+  'xiuxian': function(){ if (typeof xiuxianOpenMall==='function') xiuxianOpenMall(); },
+  automation: function(){ if (typeof openReminderModal==='function') openReminderModal(); },
+  'st-random': function(){ if (typeof doRandomPick==='function') doRandomPick(); }
+};
+function updateMobileFab() {
+  var fab = document.getElementById('mobileFab');
+  if (!fab) return;
+  var act = MOBILE_FAB[state.currentPage];
+  if (act && isMobileUI()) { fab.classList.remove('fab-hidden'); fab._fabFn = act; }
+  else { fab.classList.add('fab-hidden'); fab._fabFn = null; }
+}
+function onMobileFab() {
+  var fab = document.getElementById('mobileFab');
+  if (fab && fab._fabFn) fab._fabFn();
+}
+
+function updateMobileTabBadges() {
+  var badge = document.getElementById('mbnBadge-center');
+  if (!badge) return;
+  var pending = (state.tasks||[]).filter(function(t){ return !t.completed; }).length;
+  if (pending > 0) {
+    badge.textContent = pending > 99 ? '99+' : String(pending);
+    badge.classList.add('show');
+  } else {
+    badge.classList.remove('show');
+  }
 }
 
 /* ===== 桌面侧栏收起/展开 ===== */
@@ -3119,6 +3202,8 @@ function _doRenderPage() {
     case 'xiuxian-pool': console.log('[_doRenderPage] → renderXiuxian for', state.currentPage); renderXiuxian(area); break;
     default: console.warn('[_doRenderPage] ❌ UNKNOWN page:', state.currentPage, '— showing 页面建设中'); area.innerHTML = '<div class="empty-state"><span class="emoji">🚧</span>页面建设中</div>';
   }
+  updateMobileFab();
+  updateMobileTabBadges();
 }
 
 /* ===================== 01 Task List ===================== */
@@ -3180,6 +3265,22 @@ function renderTaskList(container) {
   const tasks = state.tasks.sort((a,b)=> (a.completed-b.completed) || (new Date(a.time)-new Date(b.time)));
   if (tasks.length===0) {
     container.innerHTML = '<div class="empty-state"><span class="emoji">📭</span>暂无任务，点击「新建任务」开始</div>';
+    return;
+  }
+  const IS_M = isMobileUI();
+  if (IS_M) {
+    const mrows = tasks.map(t => {
+      const cls = t.completed ? 'completed' : '';
+      return '<div class="m-row ' + cls + '">'
+        + '<input type="checkbox" class="checkbox-box" ' + (t.completed?'checked':'') + ' data-ev="change" data-ev-key="ev11" data-ev-args="' + escapeAttr(JSON.stringify([t.id])) + '">'
+        + '<div class="m-body" data-click="openTaskModal" data-click-args="[&quot;' + t.id + '&quot;]">'
+          + '<div class="m-title">' + escapeHtml(t.name) + (t.important?' <span class="tag tag-important">重要</span>':'') + (t.urgent?' <span class="tag tag-urgent">紧急</span>':'') + '</div>'
+          + '<div class="m-sub">' + fmtDateTime(t.time) + (t.resp?' · '+escapeHtml(t.resp):'') + '</div>'
+        + '</div>'
+        + '<span class="m-trail">›</span>'
+      + '</div>';
+    }).join('');
+    container.innerHTML = '<div class="m-list">' + mrows + '</div>';
     return;
   }
   let rows = tasks.map(t => `
@@ -5098,7 +5199,7 @@ function renderStudents(container) {
       getClasses().map(function(c){ return '<div class="mbn-class-tab ' + (classFilter===c?'active':'') + '" data-click="onClassFilterChange" data-click-args="[&quot;' + c + '&quot;]">' + escapeHtml(c) + '</div>'; }).join('') +
     '</div>'
   ) : '';
-  const expandAllHTML = IS_M ? ('<button class="btn btn-outline" id="studentExpandAllBtn" data-click="toggleAllStudentCards">' + studentExpandAllLabel() + '</button>') : '';
+  const expandAllHTML = IS_M ? '' : ('<button class="btn btn-outline" id="studentExpandAllBtn" data-click="toggleAllStudentCards">' + studentExpandAllLabel() + '</button>');
   container.innerHTML = `
     <div class="stats-row">
       <div class="stat-card"><span class="stat-icon">🎓</span><div class="stat-num">${showStudents.length}</div><div class="stat-label">学生总数</div></div>
@@ -5182,27 +5283,19 @@ function renderStudentGrid(students) {
   }
   const IS_M = isMobileUI();
   const expandedSet = window._studentExpanded || (window._studentExpanded = {});
-  grid.innerHTML = students.map(s => {
+  const _studentHtml = students.map(s => {
     const badgeClass = getLayerBadgeClass(s);
     const layer = getStudentLayer(s);
     if (IS_M) {
-      const expanded = !!expandedSet[s.id];
-      const cardCls = 'student-card-item layer-' + badgeClass + (expanded ? ' m-expanded' : ' m-compact');
-      return '<div class="' + cardCls + '" data-click="toggleStudentCard" data-click-args="[&quot;' + s.id + '&quot;]">'
-        + '<div style="display:flex;justify-content:space-between;align-items:start">'
-          + '<div>'
-            + '<div class="student-card-name">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
-            + '<div class="student-card-info">' + escapeHtml(s.classId) + ' · ' + escapeHtml(s.gender) + ' · ' + escapeHtml(s.scoreTrend) + '</div>'
-          + '</div>'
-          + '<div><span class="layer-badge ' + badgeClass + '">' + layer + '层</span></div>'
+      const initial = escapeHtml((s.name || '?').charAt(0));
+      return '<div class="m-row" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]">'
+        + '<div class="m-avatar">' + initial + '</div>'
+        + '<div class="m-body">'
+          + '<div class="m-title">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
+          + '<div class="m-sub">' + escapeHtml(s.classId) + ' · ' + escapeHtml(s.gender) + ' · 优' + s.homeworkStats.excellent + '/完' + s.homeworkStats.normal + '/未' + s.homeworkStats.incomplete + '</div>'
         + '</div>'
-        + '<div class="student-card-tags">' + s.tags.map(function(t){ return '<span class="tag tag-normal">' + escapeHtml(t) + '</span>'; }).join('') + '</div>'
-        + '<div class="m-hw" style="margin-top:10px;display:flex;gap:10px;font-size:11px;color:var(--text-muted)">'
-          + '<span>✅ 优' + s.homeworkStats.excellent + '</span>'
-          + '<span>📝 完' + s.homeworkStats.normal + '</span>'
-          + '<span style="color:var(--danger)">❌ 未' + s.homeworkStats.incomplete + '</span>'
-        + '</div>'
-        + '<button class="m-detail-btn" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]">📋 详情</button>'
+        + '<span class="layer-badge ' + badgeClass + '">' + layer + '层</span>'
+        + '<span class="m-trail">›</span>'
       + '</div>';
     }
     return '<div class="student-card-item layer-' + badgeClass + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]">'
@@ -5221,6 +5314,7 @@ function renderStudentGrid(students) {
       + '</div>'
     + '</div>';
   }).join('');
+  grid.innerHTML = IS_M ? '<div class="m-list">' + _studentHtml + '</div>' : _studentHtml;
 }
 
 // 学生卡片（手机端）展开/收起 + 全部展开/收起
@@ -11727,6 +11821,10 @@ const __CLICK = {
   toggleSidebarCollapse: toggleSidebarCollapse,
   toggleStudentCard: toggleStudentCard, toggleAllStudentCards: toggleAllStudentCards,
   openSyncModal: openSyncModal,
+  openMobileOverflow: openMobileOverflow,
+  closeMobileOverflow: closeMobileOverflow,
+  __dcOverflow: __dcOverflow,
+  onMobileFab: onMobileFab,
   openTaskInfoEditModal: openTaskInfoEditModal,
   openTaskModal: openTaskModal,
   prevQuizDay: prevQuizDay,
