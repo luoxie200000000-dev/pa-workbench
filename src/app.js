@@ -2030,7 +2030,7 @@ async function copyDbPath() {
 }
 async function resetStoragePath() {
   if (!isTauriApp()) { showToast('仅在桌面版可用', 'warn'); return; }
-  if (!confirm('确定要重置为默认存储路径吗？应用将重启。')) return;
+  if (!(await appConfirm('确定要重置为默认存储路径吗？应用将重启。'))) return;
   try {
     await __invoke('reset_custom_db_path');
     showToast('已重置为默认路径，应用将重启...', 'success');
@@ -2277,11 +2277,11 @@ function handleImportFile(input) {
   reader.readAsText(file);
 }
 
-function confirmImport() {
+async function confirmImport() {
   if (!window._pendingImportData) return;
   var data = window._pendingImportData;
   var importState = data.state || data;
-  if (!confirm('确定要覆盖当前所有数据吗？此操作不可撤销！')) return;
+  if (!(await appConfirm('确定要覆盖当前所有数据吗？此操作不可撤销！'))) return;
 
   // 恢复 state
   Object.keys(state).forEach(function(key) {
@@ -2656,6 +2656,10 @@ function openMobileOverflow() {
     { key:'theme',  icon:'🎨', label:'主题设置' },
     { key:'mode',   icon:'🔄', label:'切换桌面/手机' }
   ];
+  // 浏览器预览模式：追加「载入示例数据」便于直接预览列表效果（生产 App 不显示）
+  if (!isTauriApp()) {
+    items.push({ key:'demo', icon:'🧪', label:'载入示例数据' });
+  }
   var html = items.map(function(it){
     var args = escapeAttr(JSON.stringify([it.key]));
     return '<div class="mobile-overflow-item" data-click="__dcOverflow" data-click-args="'+args+'">' +
@@ -2683,6 +2687,16 @@ function __dcOverflow(args) {
   else if (key==='data') openDataManager();
   else if (key==='theme') toggleThemePanel();
   else if (key==='mode') cycleUiMode();
+  else if (key==='demo') seedDemoData();
+}
+
+/* 浏览器预览专用：重新载入示例数据，方便查看各列表的手机行样式 */
+function seedDemoData() {
+  if (isTauriApp()) return; // 生产 App 不启用
+  initSampleData();
+  renderPage();
+  commitSave();
+  showToast('已载入示例数据，可直接预览列表效果', 'success');
 }
 
 /* 按页面主操作的 FAB 映射（微信聊天列表「+」式一键新增） */
@@ -3271,7 +3285,7 @@ function renderTaskList(container) {
   if (IS_M) {
     const mrows = tasks.map(t => {
       const cls = t.completed ? 'completed' : '';
-      return '<div class="m-row ' + cls + '">'
+      return '<div class="m-row ' + cls + '" data-ev="contextmenu" data-ev-key="evRowMenu" data-ev-args="' + escapeAttr(JSON.stringify(['task', t.id])) + '">'
         + '<input type="checkbox" class="checkbox-box" ' + (t.completed?'checked':'') + ' data-ev="change" data-ev-key="ev11" data-ev-args="' + escapeAttr(JSON.stringify([t.id])) + '">'
         + '<div class="m-body" data-click="openTaskModal" data-click-args="[&quot;' + t.id + '&quot;]">'
           + '<div class="m-title">' + escapeHtml(t.name) + (t.important?' <span class="tag tag-important">重要</span>':'') + (t.urgent?' <span class="tag tag-urgent">紧急</span>':'') + '</div>'
@@ -3532,8 +3546,8 @@ function saveTask(id) {
   renderTasks(document.getElementById('contentArea'));
 }
 
-function deleteTask(id) {
-  if (!confirm('确认删除此任务？')) return;
+async function deleteTask(id) {
+  if (!(await appConfirm('确认删除此任务？', {danger:true}))) return;
   state.tasks = state.tasks.filter(t=>t.id!==id);
   saveState();
   showToast('任务已删除');
@@ -3699,8 +3713,8 @@ function viewPlan(id) {
   `);
 }
 
-function deletePlan(id) {
-  if (!confirm('确认删除此计划？')) return;
+async function deletePlan(id) {
+  if (!(await appConfirm('确认删除此计划？', {danger:true}))) return;
   state.plans = state.plans.filter(p=>p.id!==id);
   saveState();
   showToast('计划已删除');
@@ -4274,8 +4288,8 @@ function saveAdjustment(editId) {
   renderSchedule(document.getElementById('contentArea'));
 }
 
-function deleteAdjustment(id) {
-  if (!confirm('确认删除此调课记录？')) return;
+async function deleteAdjustment(id) {
+  if (!(await appConfirm('确认删除此调课记录？', {danger:true}))) return;
   state.adjustments = state.adjustments.filter(a=>a.id!==id);
   saveState();
   showToast('调课记录已删除');
@@ -4473,8 +4487,8 @@ function saveScheduleEntry(entryId) {
   renderSchedule(document.getElementById('contentArea'));
 }
 
-function deleteScheduleEntry(id) {
-  if (!confirm('确认删除这节课？')) return;
+async function deleteScheduleEntry(id) {
+  if (!(await appConfirm('确认删除这节课？', {danger:true}))) return;
   state.schedule = state.schedule.filter(s => (s.id||'') !== id);
   saveState();
   closeModal();
@@ -4847,8 +4861,8 @@ function saveProgress(id) {
   renderProgress(document.getElementById('contentArea'));
 }
 
-function deleteProgress(id) {
-  if (!confirm('确认删除此进度记录？')) return;
+async function deleteProgress(id) {
+  if (!(await appConfirm('确认删除此进度记录？', {danger:true}))) return;
   state.progress = state.progress.filter(p=>p.id!==id);
   saveState();
   showToast('进度已删除');
@@ -5004,11 +5018,11 @@ function addStudent(data) {
 }
 
 // 删除学生（同时清理关联数据：成绩、作业记录、学生任务、聊天消息）
-function deleteStudent(id) {
+async function deleteStudent(id) {
   const idx = state.students.findIndex(s => s.id === id);
   if (idx < 0) { showToast('学生不存在', 'error'); return false; }
   const s = state.students[idx];
-  if (!confirm(`确定要删除学生「${s.name} (${s.studentNo})」吗？\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`)) {
+  if (!(await appConfirm(`确定要删除学生「${s.name} (${s.studentNo})」吗？\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
     return false;
   }
   state.students.splice(idx, 1);
@@ -5287,8 +5301,9 @@ function renderStudentGrid(students) {
     const badgeClass = getLayerBadgeClass(s);
     const layer = getStudentLayer(s);
     if (IS_M) {
-      const initial = escapeHtml((s.name || '?').charAt(0));
-      return '<div class="m-row" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]">'
+      const initialChar = (s.name || '?').charAt(0);
+      const initial = escapeHtml(initialChar);
+      return '<div class="m-row" data-initial="' + escapeAttr(initialChar) + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]" data-ev="contextmenu" data-ev-key="evRowMenu" data-ev-args="' + escapeAttr(JSON.stringify(['student', s.id])) + '">'
         + '<div class="m-avatar">' + initial + '</div>'
         + '<div class="m-body">'
           + '<div class="m-title">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
@@ -5315,6 +5330,41 @@ function renderStudentGrid(students) {
     + '</div>';
   }).join('');
   grid.innerHTML = IS_M ? '<div class="m-list">' + _studentHtml + '</div>' : _studentHtml;
+  if (IS_M) renderStudentAlphaIndex();
+}
+
+// ── 学生总库：手机端首字索引侧栏（微信/QQ 风格右侧索引）──
+function renderStudentAlphaIndex() {
+  var rail = document.getElementById('studentAlphaIndex');
+  if (!isMobileUI()) { if (rail) rail.style.display = 'none'; return; }
+  var grid = document.getElementById('studentGrid');
+  if (!grid) { if (rail) rail.style.display = 'none'; return; }
+  var rows = grid.querySelectorAll('.m-row[data-initial]');
+  var seen = {}, order = [];
+  for (var i = 0; i < rows.length; i++) {
+    var ch = rows[i].getAttribute('data-initial');
+    if (!ch) continue;
+    if (!seen[ch]) { seen[ch] = true; order.push(ch); }
+  }
+  if (!rail) {
+    rail = document.createElement('div');
+    rail.id = 'studentAlphaIndex';
+    var host = document.getElementById('contentArea') || document.body;
+    host.appendChild(rail);
+  }
+  if (order.length === 0) { rail.style.display = 'none'; return; }
+  rail.style.display = '';
+  rail.innerHTML = order.map(function(ch) {
+    return '<div class="alpha-item" data-click="scrollToStudentInitial" data-click-args="' + escapeAttr(JSON.stringify([ch])) + '">' + escapeHtml(ch) + '</div>';
+  }).join('');
+}
+function scrollToStudentInitial(letter) {
+  if (!letter) return;
+  var grid = document.getElementById('studentGrid');
+  if (!grid) return;
+  var sel = '.m-row[data-initial="' + (window.CSS && CSS.escape ? CSS.escape(letter) : letter) + '"]';
+  var target = grid.querySelector(sel);
+  if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // 学生卡片（手机端）展开/收起 + 全部展开/收起
@@ -5697,8 +5747,8 @@ function saveTaskInfo(id) {
   renderTaskInfoList();
 }
 
-function deleteStudentTask(id) {
-  if (!confirm('确认删除此作业任务？')) return;
+async function deleteStudentTask(id) {
+  if (!(await appConfirm('确认删除此作业任务？', {danger:true}))) return;
   state.studentTasks = state.studentTasks.filter(t => t.id !== id);
   saveState();
   showToast('作业任务已删除');
@@ -8298,8 +8348,8 @@ function saveEditedScore(id) {
   renderScoreAnalysis(document.getElementById('analysisContainer'));
 }
 
-function deleteScore(id) {
-  if (!confirm('确认删除此成绩记录？')) return;
+async function deleteScore(id) {
+  if (!(await appConfirm('确认删除此成绩记录？', {danger:true}))) return;
   state.scores = state.scores.filter(s => s.id !== id);
   saveState();
   showToast('成绩已删除');
@@ -8373,8 +8423,8 @@ function toggleReminder(id) {
   showToast(r.active?'提醒已启用':'提醒已暂停');
 }
 
-function deleteReminder(id) {
-  if (!confirm('确认删除此提醒？')) return;
+async function deleteReminder(id) {
+  if (!(await appConfirm('确认删除此提醒？', {danger:true}))) return;
   state.reminders = state.reminders.filter(r=>r.id!==id);
   saveState();
   renderReminderList();
@@ -11753,6 +11803,10 @@ const __CLICK = {
   __dcStopOpenAdj: __dcStopOpenAdj,
   __dcStopOpenProg: __dcStopOpenProg,
   __dcStopOpenTaskInfo: __dcStopOpenTaskInfo,
+  __dcSheetOk: __dcSheetOk,
+  __dcSheetCancel: __dcSheetCancel,
+  __dcSheetItem: __dcSheetItem,
+  scrollToStudentInitial: scrollToStudentInitial,
   __dcToggleTeachRender: __dcToggleTeachRender,
   __noop: __noop,
   addDay: addDay,
@@ -12068,21 +12122,21 @@ function renderMobileSubnav(gid) {
   }, {passive: true});
 })();
 function __dcOpenTaskFromClose(args, e, el) { closeModal(); openTaskModal(args[0]); }
-function __dcDeleteTaskClose(args, e, el) { deleteTask(args[0]); closeModal(); }
+async function __dcDeleteTaskClose(args, e, el) { await deleteTask(args[0]); closeModal(); }
 function __dcCloseEditPlan(args, e, el) { closeModal(); openEditPlanModal(args[0]); }
 function __dcStopOpenAdj(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); openAdjustmentModal(args[0]); }
-function __dcStopDelAdj(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); deleteAdjustment(args[0]); }
+async function __dcStopDelAdj(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); await deleteAdjustment(args[0]); }
 function __dcStopOpenProg(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); openProgressModal(args[0]); }
-function __dcStopDelProg(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); deleteProgress(args[0]); }
-function __dcDeleteProgressClose(args, e, el) { deleteProgress(args[0]); closeModal(); }
+async function __dcStopDelProg(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); await deleteProgress(args[0]); }
+async function __dcDeleteProgressClose(args, e, el) { await deleteProgress(args[0]); closeModal(); }
 function __dcToggleTeachRender(args, e, el) { if(toggleTeachingClass(args[0])){ renderClassManagerList(); renderPage(); } }
 function __dcDelClassRender(args, e, el) { if(deleteClass(args[0])){ renderClassManagerList(); renderPage(); } }
 function __dcAddClassRender(args, e, el) { if(addClass(document.getElementById('newClassName').value, document.getElementById('newClassIsTeaching').checked)){ document.getElementById('newClassName').value=''; renderClassManagerList(); renderPage(); } }
-function __dcDelStudentCloseRender(args, e, el) { if(deleteStudent(args[0])){ closeModal(); renderPage(); } }
+async function __dcDelStudentCloseRender(args, e, el) { if(await deleteStudent(args[0])){ closeModal(); renderPage(); } }
 function __dcStopOpenTaskInfo(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); openTaskInfoEditModal(args[0]); }
-function __dcStopDelStudentTask(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); deleteStudentTask(args[0]); }
+async function __dcStopDelStudentTask(args, e, el) { if(e&&e.stopPropagation)e.stopPropagation(); await deleteStudentTask(args[0]); }
 function __dcSetHwStatusClose(args, e, el) { setHwStatus(args[0], args[1]); closeModal(); }
-function __dcDelStudentReload(args, e, el) { if(deleteStudent(args[0])){ loadClassStudentsForEntry(); } }
+async function __dcDelStudentReload(args, e, el) { if(await deleteStudent(args[0])){ loadClassStudentsForEntry(); } }
 function __dcSkillHint(args, e, el) { skillHint(); if(e&&e.preventDefault)e.preventDefault(); }
 function __dcCommitSaveClose(args, e, el) { commitSave(); closeModal(); }
 function __dcClickEl(args, e, el) { var el=document.getElementById(args[0]); if(el) el.click(); }
@@ -12091,6 +12145,112 @@ function __dcRemoveParent(args, e, el) { var tgt = el || (e && e.target); if(tgt
 function __dcConfirmSchedImport(args, e, el) { window._pendingScheduleData = args[0]; confirmScheduleImport(); }
 function __dcClassRemove(args, e, el) { var el=document.getElementById(args[0]); if(el) el.classList.remove(args[1]); }
 function __dcSetXEx(args, e, el) { var el=document.getElementById('xExAmount'); if(el) el.value=args[0]; }
+
+/* ===================== 底部动作面板（微信/QQ 风格） =====================
+   替代原生 confirm()：移动端用底部动作面板（action sheet），桌面端保持原生 confirm；
+   同时解决移动 WebView 中原生 confirm 可能不弹窗/被禁用，导致删除等功能在手机上失效的问题。 */
+var __confirmResolver = null;   // appConfirm 的 Promise resolve
+var __sheetResolver = null;     // appActionSheet 的 Promise resolve
+
+function __getSheetRoot() {
+  var root = document.getElementById('actionSheetRoot');
+  if (!root) { root = document.createElement('div'); root.id = 'actionSheetRoot'; document.body.appendChild(root); }
+  return root;
+}
+function __closeSheet() {
+  var r = document.getElementById('actionSheetRoot');
+  if (r) { r.innerHTML = ''; r.classList.remove('show'); r.__sheetItems = null; r.__sheetResolve = null; }
+  __confirmResolver = null; __sheetResolver = null;
+}
+
+/* 确认弹窗：message 文本；opts={danger,confirmText,cancelText} */
+function appConfirm(message, opts) {
+  opts = opts || {};
+  if (!isMobileUI()) return Promise.resolve(window.confirm(message));
+  return new Promise(function(resolve) {
+    __confirmResolver = resolve;
+    var danger = opts.danger ? ' danger' : '';
+    var ok = opts.confirmText || '确定';
+    var cancel = opts.cancelText || '取消';
+    var root = __getSheetRoot();
+    root.innerHTML =
+      '<div class="sheet-overlay" data-click="__dcSheetCancel"></div>' +
+      '<div class="action-sheet" role="alertdialog" aria-modal="true">' +
+        '<div class="action-sheet-msg">' + escapeHtml(message).replace(/\n/g, '<br>') + '</div>' +
+        '<button class="action-sheet-btn' + danger + '" data-click="__dcSheetOk">' + escapeHtml(ok) + '</button>' +
+        '<button class="action-sheet-btn cancel" data-click="__dcSheetCancel">' + escapeHtml(cancel) + '</button>' +
+      '</div>';
+    requestAnimationFrame(function(){ root.classList.add('show'); });
+  });
+}
+
+/* 动作面板：items=[{label,danger,onClick}]；opts={title,cancelText} */
+function appActionSheet(items, opts) {
+  opts = opts || {};
+  if (!isMobileUI()) return Promise.resolve(null);   // 桌面以按钮为主，不弹面板
+  return new Promise(function(resolve) {
+    var root = __getSheetRoot();
+    var html = opts.title ? '<div class="action-sheet-title">' + escapeHtml(opts.title) + '</div>' : '';
+    html += '<div class="action-sheet-list">';
+    items.forEach(function(it, i) {
+      html += '<button class="action-sheet-btn' + (it.danger ? ' danger' : '') + '" data-click="__dcSheetItem" data-click-args="' + escapeAttr(JSON.stringify([i])) + '">' + escapeHtml(it.label) + '</button>';
+    });
+    html += '</div>';
+    html += '<button class="action-sheet-btn cancel" data-click="__dcSheetCancel">' + escapeHtml(opts.cancelText || '取消') + '</button>';
+    root.innerHTML = '<div class="sheet-overlay" data-click="__dcSheetCancel"></div><div class="action-sheet" role="dialog" aria-modal="true">' + html + '</div>';
+    root.__sheetItems = items; root.__sheetResolve = resolve;
+    requestAnimationFrame(function(){ root.classList.add('show'); });
+  });
+}
+
+/* 长按列表行 → 动作面板（Edit/Delete 等）。type 决定动作集合。 */
+function rowMenuActions(type, id) {
+  if (type === 'task') return [
+    { label: '✏️ 编辑', onClick: function(){ openTaskModal(id); } },
+    { label: '🗑️ 删除', danger: true, onClick: function(){ deleteTask(id); } }
+  ];
+  if (type === 'student') return [
+    { label: '👤 查看档案', onClick: function(){ openStudentProfile(id); } },
+    { label: '✏️ 编辑', onClick: function(){ openStudentEditor(id); } },
+    { label: '🗑️ 删除', danger: true, onClick: function(){ deleteStudent(id); } }
+  ];
+  if (type === 'score') return [
+    { label: '✏️ 编辑成绩', onClick: function(){ editScore(id); } },
+    { label: '🗑️ 删除', danger: true, onClick: function(){ deleteScore(id); } }
+  ];
+  if (type === 'reminder') return [
+    { label: '🗑️ 删除', danger: true, onClick: function(){ deleteReminder(id); } }
+  ];
+  return [];
+}
+function evRowMenu(el, e) {
+  if (!isMobileUI()) return;                 // 桌面保持原生右键菜单
+  if (e && e.preventDefault) e.preventDefault();
+  var a = __parseEvArgs(el) || [];
+  var actions = rowMenuActions(a[0], a[1]);
+  if (!actions.length) return;
+  appActionSheet(actions);
+}
+/* 抑制移动端 .m-row 长按原生气泡菜单（已由 evRowMenu 接管为动作面板） */
+document.addEventListener('contextmenu', function(e) {
+  if (isMobileUI() && e.target && e.target.closest && e.target.closest('.m-row')) e.preventDefault();
+});
+
+function __dcSheetOk(args, e, el) { var r = __confirmResolver; __confirmResolver = null; __closeSheet(); if (r) r(true); }
+function __dcSheetCancel(args, e, el) {
+  var cr = __confirmResolver; __confirmResolver = null;
+  var root = document.getElementById('actionSheetRoot');
+  var sr = root && root.__sheetResolve; if (root) root.__sheetResolve = null;
+  __closeSheet();
+  if (cr) cr(false);
+  if (sr) sr(null);
+}
+function __dcSheetItem(args, e, el) {
+  var root = document.getElementById('actionSheetRoot');
+  var items = root && root.__sheetItems; var idx = args[0];
+  __closeSheet();
+  if (items && items[idx] && items[idx].onClick) { try { items[idx].onClick(); } catch (err) { console.error(err); } }
+}
 
 function __parseClickArgs(el) {
   var raw = el.getAttribute('data-click-args');
@@ -12146,6 +12306,7 @@ const __EV = {
     saveState();
     updateSyncModal();
   },
+  evRowMenu: evRowMenu,
 
   ev1: function ev1(el, e) { var event = e; state.cloudAutoSync=this.checked;saveState() },
   ev10: function ev10(el, e) { var event = e; if(event.key==='Enter')verifyBeforeChange() },
@@ -12219,7 +12380,7 @@ function __parseEvArgs(el) {
   if (!raw) return [];
   try { return JSON.parse(raw); } catch (e) { console.error('[delegate] data-ev-args 解析失败:', raw, e); return []; }
 }
-var __EV_TYPES = ['change','keypress','input','dragover','dragleave','drop','dragstart','dragend'];
+var __EV_TYPES = ['change','keypress','input','dragover','dragleave','drop','dragstart','dragend','contextmenu'];
 __EV_TYPES.forEach(function(t) {
   document.addEventListener(t, function(e) {
     var el = e.target;
