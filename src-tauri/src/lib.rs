@@ -639,16 +639,29 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let db_url = compute_db_url(app);
-            let db_path = db_url.strip_prefix("sqlite:").unwrap_or(&db_url).replace('/', "\\");
+            // 关键：前端用 Database.load("sqlite:workbuddy.db") 打开数据库。
+            // tauri-plugin-sql 按「URL 字符串精确匹配」决定是否执行迁移，
+            // 且 sqlite:<X> 会被解析到 <app_config_dir>/<X>。因此迁移注册 key
+            // 必须与前端加载的 URL 完全一致，否则前端实际打开的库永远建不了表
+            // （表现：列表为空、保存无效）。
+            let migrations_db_url = "sqlite:workbuddy.db";
 
             let sql_plugin = tauri_plugin_sql::Builder::default()
-                .add_migrations(&db_url, migrations)
+                .add_migrations(migrations_db_url, migrations)
                 .build();
             app.handle().plugin(sql_plugin)?;
 
+            // 计算插件实际会把 sqlite:workbuddy.db 解析成的绝对文件路径，
+            // 让 db_execute（所有写操作）与前端读取落在同一个文件上。
+            let app_config = app.path().app_config_dir().unwrap_or_else(|_| PathBuf::from("."));
+            let actual_db_path = app_config.join("workbuddy.db");
+            let actual_db_path_str = actual_db_path.to_string_lossy().replace('\\', "/");
+
+            // 保留旧版数据库迁移的副作用（桌面端），不影响 Android。
+            let _legacy_db_url = compute_db_url(app);
+
             if let Some(window) = app.get_webview_window("main") {
-                let db_path_json = serde_json::to_string(&db_path).unwrap_or_else(|_| "\"\"".to_string());
+                let db_path_json = serde_json::to_string(&actual_db_path_str).unwrap_or_else(|_| "\"\"".to_string());
                 let js = format!(
                     "window.__IS_TAURI_APP__ = true;\nwindow.__TAURI_DB_PATH__ = {};",
                     db_path_json
@@ -657,10 +670,10 @@ pub fn run() {
             }
 
             app.manage(DbPathState {
-                path: PathBuf::from(&db_path),
+                path: PathBuf::from(&actual_db_path_str),
             });
 
-            eprintln!("[Tauri] App setup complete, DB URL: {}", db_url);
+            eprintln!("[Tauri] App setup complete, DB file: {}", actual_db_path_str);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
