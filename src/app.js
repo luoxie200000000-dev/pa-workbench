@@ -243,8 +243,8 @@ let state = {
   localFileHandle: null,
   localFileName: "",
   xiuxian: null,
-  // 视图模式：'auto'(按窗口宽度自动) | 'mobile'(强制手机布局) | 'desktop'(强制桌面布局)
-  uiMode: (function(){ try { return localStorage.getItem('uiMode') || 'auto'; } catch(e) { return 'auto'; } })()
+  // 视图模式：'mobile'(手机布局) | 'desktop'(桌面布局)，无自动模式
+  uiMode: (function(){ try { var m = localStorage.getItem('uiMode'); return (m === 'mobile' || m === 'desktop') ? m : 'desktop'; } catch(e) { return 'desktop'; } })()
 };
 
 // ===== 可序列化状态辅助函数 =====
@@ -1638,9 +1638,13 @@ function showToast(msg, type) {
 
 /* ===================== Modal ===================== */
 // 安全警告：openModal 将 html 参数直接插入 innerHTML，调用方必须自行使用 escapeHtml/escapeAttr 转义用户数据
-function openModal(html) {
+function openModal(html, opts) {
+  opts = opts || {};
   const c = document.getElementById('modalContainer');
-  c.innerHTML = '<div class="modal-overlay" role="dialog" aria-modal="true" data-click="closeModal" data-click-self="1"><div class="modal">' + html + '</div></div>';
+  var overlayAttr = opts.closable === false ? '' : ' data-click="closeModal" data-click-self="1"';
+  var modalStyle = opts.width ? ' style="max-width:' + opts.width + '"' : '';
+  var titleHtml = opts.title ? '<div style="font-size:17px;font-weight:700;color:var(--text-heading);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border-light)">' + escapeHtml(opts.title) + '</div>' : '';
+  c.innerHTML = '<div class="modal-overlay" role="dialog" aria-modal="true"' + overlayAttr + '><div class="modal"' + modalStyle + '>' + titleHtml + html + '</div></div>';
   // 焦点管理：将焦点移到模态框
   var modal = c.querySelector('.modal');
   if (modal) { modal.setAttribute('tabindex', '-1'); modal.focus(); }
@@ -2564,6 +2568,7 @@ const MOBILE_SECTIONS = {
       {page:'skill-links', icon:'\ud83d\udd17', label:'Skill链接'},
       {page:'ima-link', icon:'\ud83e\udde0', label:'IMA链接入口'},
       {page:'daily-quiz', icon:'\ud83d\udcda', label:'每日练习'},
+      {action:'openModeSwitcher', icon:'\ud83d\udd04', label:'05模式切换'},
       {action:'showRuntimeStatus', icon:'\ud83d\udcca', label:'运行状态'},
       {action:'openDataManager', icon:'\ud83d\udce6', label:'数据导入合并'},
       {action:'syncQuick', icon:'\u2601\ufe0f', label:'云同步'}
@@ -2618,8 +2623,7 @@ function closeSidebar() {
 /* ===== 桌面 / 手机 App 模式切换 ===== */
 function isMobileUI() {
   if (state.uiMode === 'mobile') return true;
-  if (state.uiMode === 'desktop') return false;
-  return window.innerWidth <= 768;
+  return false;
 }
 function updateUiModeBtn() {
   var btn = document.getElementById('uiModeBtn');
@@ -2627,8 +2631,7 @@ function updateUiModeBtn() {
   var icon = document.getElementById('uiModeIcon');
   var text = document.getElementById('uiModeText');
   if (state.uiMode === 'mobile') { if (icon) icon.textContent = '📱'; if (text) text.textContent = '手机'; }
-  else if (state.uiMode === 'desktop') { if (icon) icon.textContent = '💻'; if (text) text.textContent = '桌面'; }
-  else { if (icon) icon.textContent = '🔄'; if (text) text.textContent = '自动'; }
+  else { if (icon) icon.textContent = '💻'; if (text) text.textContent = '桌面'; }
 }
 function applyUiMode(opts) {
   opts = opts || {};
@@ -2641,9 +2644,62 @@ function applyUiMode(opts) {
   if (opts.rerender && (mobile !== wasMobile)) renderPage();
 }
 function cycleUiMode() {
-  state.uiMode = state.uiMode === 'auto' ? 'mobile' : (state.uiMode === 'mobile' ? 'desktop' : 'auto');
+  state.uiMode = state.uiMode === 'mobile' ? 'desktop' : 'mobile';
   try { localStorage.setItem('uiMode', state.uiMode); } catch(e) {}
   applyUiMode({ rerender: true });
+  showToast('已切换到' + (state.uiMode === 'mobile' ? '手机' : '桌面') + '模式', 'info');
+}
+function setUiMode(mode) {
+  if (mode !== 'mobile' && mode !== 'desktop') return;
+  state.uiMode = mode;
+  try { localStorage.setItem('uiMode', mode); } catch(e) {}
+  try { localStorage.setItem('uiModeInitialized', '1'); } catch(e) {}
+  applyUiMode({ rerender: true });
+  closeModal();
+  showToast('已切换到' + (mode === 'mobile' ? '手机' : '桌面') + '模式', 'success');
+}
+function openModeSwitcher() {
+  var cur = state.uiMode || 'desktop';
+  var html = '<div style="text-align:center;padding:8px 0 4px">' +
+    '<div style="font-size:32px;margin-bottom:8px">🔄</div>' +
+    '<div style="font-size:16px;font-weight:700;color:var(--text-heading);margin-bottom:4px">选择显示模式</div>' +
+    '<div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">当前：' + (cur === 'mobile' ? '📱 手机模式' : '💻 桌面模式') + '</div>' +
+    '</div>';
+  html += '<div style="display:flex;gap:12px;margin-bottom:16px">';
+  html += '<div class="mode-pick-card' + (cur==='desktop'?' mode-pick-active':'') + '" data-click="setUiMode" data-click-args="[&quot;desktop&quot;]" style="flex:1;cursor:pointer;border:2px solid ' + (cur==='desktop'?'var(--primary)':'var(--border-light)') + ';border-radius:12px;padding:20px 12px;text-align:center;transition:all 0.2s">' +
+    '<div style="font-size:36px;margin-bottom:8px">💻</div>' +
+    '<div style="font-weight:700;font-size:15px;color:var(--text-heading)">桌面模式</div>' +
+    '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">适合电脑/平板</div>' +
+    '</div>';
+  html += '<div class="mode-pick-card' + (cur==='mobile'?' mode-pick-active':'') + '" data-click="setUiMode" data-click-args="[&quot;mobile&quot;]" style="flex:1;cursor:pointer;border:2px solid ' + (cur==='mobile'?'var(--primary)':'var(--border-light)') + ';border-radius:12px;padding:20px 12px;text-align:center;transition:all 0.2s">' +
+    '<div style="font-size:36px;margin-bottom:8px">📱</div>' +
+    '<div style="font-weight:700;font-size:15px;color:var(--text-heading)">手机模式</div>' +
+    '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">适合手机/窄屏</div>' +
+    '</div>';
+  html += '</div>';
+  html += '<div style="text-align:center;font-size:12px;color:var(--text-muted)">选择后随时可在「快捷工具 → 05模式切换」中更改</div>';
+  openModal(html, { title: '模式切换', width: '420px' });
+}
+function showFirstLaunchModePicker() {
+  var html = '<div style="text-align:center;padding:16px 0 8px">' +
+    '<div style="font-size:40px;margin-bottom:12px">🧽</div>' +
+    '<div style="font-size:18px;font-weight:700;color:var(--text-heading);margin-bottom:4px">欢迎使用派大星工作台</div>' +
+    '<div style="font-size:14px;color:var(--text-muted);margin-bottom:24px">请选择你喜欢的显示模式</div>' +
+    '</div>';
+  html += '<div style="display:flex;gap:12px;margin-bottom:16px">';
+  html += '<div class="mode-pick-card" data-click="setUiMode" data-click-args="[&quot;desktop&quot;]" style="flex:1;cursor:pointer;border:2px solid var(--border-light);border-radius:12px;padding:24px 12px;text-align:center;transition:all 0.2s">' +
+    '<div style="font-size:40px;margin-bottom:10px">💻</div>' +
+    '<div style="font-weight:700;font-size:16px;color:var(--text-heading)">桌面模式</div>' +
+    '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">适合电脑/平板<br>侧栏导航·宽屏布局</div>' +
+    '</div>';
+  html += '<div class="mode-pick-card" data-click="setUiMode" data-click-args="[&quot;mobile&quot;]" style="flex:1;cursor:pointer;border:2px solid var(--border-light);border-radius:12px;padding:24px 12px;text-align:center;transition:all 0.2s">' +
+    '<div style="font-size:40px;margin-bottom:10px">📱</div>' +
+    '<div style="font-weight:700;font-size:16px;color:var(--text-heading)">手机模式</div>' +
+    '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">适合手机/窄屏<br>底部导航·触控优化</div>' +
+    '</div>';
+  html += '</div>';
+  html += '<div style="text-align:center;font-size:12px;color:var(--text-muted)">选择后随时可在「快捷工具 → 05模式切换」中更改</div>';
+  openModal(html, { title: '初次使用 · 选择模式', width: '440px', closable: false });
 }
 
 /* ===== 手机溢出菜单 / FAB / TabBar角标（Phase 0+1，参考微信/QQ） ===== */
@@ -2654,7 +2710,8 @@ function openMobileOverflow() {
     { key:'status', icon:'📊', label:'运行状态' },
     { key:'data',   icon:'📦', label:'数据导入合并' },
     { key:'theme',  icon:'🎨', label:'主题设置' },
-    { key:'mode',   icon:'🔄', label:'切换桌面/手机' }
+    { key:'mode',   icon:'🔄', label:'切换桌面/手机' },
+    { key:'modeSwitch', icon:'📱', label:'模式切换面板' }
   ];
   // 浏览器预览模式：追加「载入示例数据」便于直接预览列表效果（生产 App 不显示）
   if (!isTauriApp()) {
@@ -2687,6 +2744,7 @@ function __dcOverflow(args) {
   else if (key==='data') openDataManager();
   else if (key==='theme') toggleThemePanel();
   else if (key==='mode') cycleUiMode();
+  else if (key==='modeSwitch') { closeMobileOverflow(); openModeSwitcher(); }
   else if (key==='demo') seedDemoData();
 }
 
@@ -9569,30 +9627,29 @@ async function initApp() {
   };
   document.addEventListener('keydown', window.__saveShortcutHandler);
 
-  // Nav click handlers + keyboard accessibility (添加标记防止重复注册)
+  // Nav keyboard accessibility (click is handled by data-click delegation)
   document.querySelectorAll('.nav-item').forEach(item => {
     item.setAttribute('tabindex', '0');
     item.setAttribute('role', 'button');
-    if (item.dataset.listenerAttached) return;
-    item.dataset.listenerAttached = '1';
-    const handler = () => {
-      if (item.classList.contains('nav-parent')) {
-        toggleNavParent(item.dataset.page);
-      } else {
-        navigateTo(item.dataset.page);
+    if (item.dataset.kbAttached) return;
+    item.dataset.kbAttached = '1';
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (item.classList.contains('nav-parent')) {
+          toggleNavParent(item.dataset.page);
+        } else {
+          navigateTo(item.dataset.page);
+        }
       }
-    };
-    item.addEventListener('click', handler);
-    item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); } });
+    });
   });
   document.querySelectorAll('.nav-child-item').forEach(item => {
     item.setAttribute('tabindex', '0');
     item.setAttribute('role', 'button');
-    if (item.dataset.listenerAttached) return;
-    item.dataset.listenerAttached = '1';
-    const handler = () => navigateTo(item.dataset.page);
-    item.addEventListener('click', handler);
-    item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); } });
+    if (item.dataset.kbAttached) return;
+    item.dataset.kbAttached = '1';
+    item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateTo(item.dataset.page); } });
   });
 
   // Expand parent if current page is child
@@ -9666,6 +9723,20 @@ async function initApp() {
   // Check reminders and tasks every 30 seconds
   checkRemindersAndTasks();
   window.__reminderTimer = setInterval(checkRemindersAndTasks, 30000);
+
+  // First-launch mode picker: if uiMode not initialized, show selection dialog
+  var uiModeInitialized = false;
+  try { uiModeInitialized = localStorage.getItem('uiModeInitialized') === '1'; } catch(e) {}
+  if (!uiModeInitialized || state.uiMode === 'auto' || !state.uiMode) {
+    // Default to desktop immediately so the app is usable
+    if (!state.uiMode || state.uiMode === 'auto') {
+      state.uiMode = 'desktop';
+      try { localStorage.setItem('uiMode', 'desktop'); } catch(e) {}
+      applyUiMode();
+    }
+    // Show picker after a short delay so the page renders first
+    setTimeout(function() { showFirstLaunchModePicker(); }, 300);
+  }
   } catch(e) {
     console.error('[initApp] 初始化出错:', e);
     // 兜底：至少渲染默认页面，不能白屏
@@ -9685,9 +9756,6 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('sidebarOverlay').classList.toggle('show');
   });
   document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
-  window.addEventListener('resize', function() {
-    if (state.uiMode === 'auto') applyUiMode({ rerender: true });
-  });
 });
 
 
@@ -11532,6 +11600,8 @@ if (!document.getElementById('xiuxian-style2')) {
 var _exportMap = {
   // 核心
   navigateTo: navigateTo, closeSidebar: closeSidebar, renderPage: renderPage,
+  toggleNavParent: toggleNavParent,
+  setUiMode: setUiMode, openModeSwitcher: openModeSwitcher,
   commitSave: commitSave, saveState: saveState,
   showToast: showToast, closeModal: closeModal, openModal: openModal,
   openPasswordModal: openPasswordModal,
@@ -11591,6 +11661,9 @@ var _exportMap = {
   openStudentProfile: openStudentProfile,
   cycleUiMode: cycleUiMode,
   toggleSidebarCollapse: toggleSidebarCollapse,
+  toggleNavParent: toggleNavParent,
+  openModeSwitcher: openModeSwitcher,
+  setUiMode: setUiMode,
   toggleStudentTag: toggleStudentTag,
   saveStudentProfile: saveStudentProfile,
   downloadStudentTemplate: downloadStudentTemplate,
@@ -11873,6 +11946,8 @@ const __CLICK = {
   openStudentProfile: openStudentProfile,
   cycleUiMode: cycleUiMode,
   toggleSidebarCollapse: toggleSidebarCollapse,
+  toggleNavParent: toggleNavParent,
+  openModeSwitcher: openModeSwitcher,
   toggleStudentCard: toggleStudentCard, toggleAllStudentCards: toggleAllStudentCards,
   openSyncModal: openSyncModal,
   openMobileOverflow: openMobileOverflow,
@@ -12013,6 +12088,7 @@ function __dcMbnItem(args, e, el) {
   if (action === 'syncQuick') { openSyncModal(); return; }
   if (action === 'showRuntimeStatus') { showRuntimeStatus(); return; }
   if (action === 'openDataManager') { openDataManager(); return; }
+  if (action === 'openModeSwitcher') { openModeSwitcher(); return; }
   if (page) navigateTo(page);
 }
 function __dcMbnToggleGroup(args, e, el) {

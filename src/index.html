@@ -31,49 +31,50 @@
     </div>
     <nav class="sidebar-nav" id="sidebarNav">
       <div class="nav-category-header">派大星的统筹中心</div>
-      <div class="nav-item" data-page="tasks"><span class="nav-icon">📋</span><span>01 任务清单</span></div>
-      <div class="nav-item" data-page="plan"><span class="nav-icon">📝</span><span>02 教学计划</span></div>
-      <div class="nav-item" data-page="schedule"><span class="nav-icon">📅</span><span>03 智能课程表</span></div>
-      <div class="nav-item" data-page="progress"><span class="nav-icon">📊</span><span>04 教学进度</span></div>
+      <div class="nav-item" data-page="tasks" data-click="navigateTo" data-click-args="[&quot;tasks&quot;]"><span class="nav-icon">📋</span><span>01 任务清单</span></div>
+      <div class="nav-item" data-page="plan" data-click="navigateTo" data-click-args="[&quot;plan&quot;]"><span class="nav-icon">📝</span><span>02 教学计划</span></div>
+      <div class="nav-item" data-page="schedule" data-click="navigateTo" data-click-args="[&quot;schedule&quot;]"><span class="nav-icon">📅</span><span>03 智能课程表</span></div>
+      <div class="nav-item" data-page="progress" data-click="navigateTo" data-click-args="[&quot;progress&quot;]"><span class="nav-icon">📊</span><span>04 教学进度</span></div>
 
       <div class="nav-category-header">派大星的学生日常管理</div>
-      <div class="nav-item" data-page="students"><span class="nav-icon">🎓</span><span>01 学生档案总库</span></div>
-      <div class="nav-item nav-parent" data-page="student-tasks">
+      <div class="nav-item" data-page="students" data-click="navigateTo" data-click-args="[&quot;students&quot;]"><span class="nav-icon">🎓</span><span>01 学生档案总库</span></div>
+      <div class="nav-item nav-parent" data-page="student-tasks" data-click="toggleNavParent" data-click-args="[&quot;student-tasks&quot;]">
         <span class="nav-icon">📚</span><span>02 学生工作任务</span>
         <span class="nav-parent-arrow">▶</span>
       </div>
       <div class="nav-children" id="nav-student-tasks">
-        <div class="nav-child-item" data-page="st-task-info"><span class="nav-icon">📝</span><span>01 任务信息</span></div>
-        <div class="nav-child-item" data-page="st-random"><span class="nav-icon">🎲</span><span>02 随机抽查</span></div>
-        <div class="nav-child-item" data-page="st-homework"><span class="nav-icon">📋</span><span>03 作业登记</span></div>
-        <div class="nav-child-item" data-page="st-chat"><span class="nav-icon">💬</span><span>04 聊天框</span></div>
+        <div class="nav-child-item" data-page="st-task-info" data-click="navigateTo" data-click-args="[&quot;st-task-info&quot;]"><span class="nav-icon">📝</span><span>01 任务信息</span></div>
+        <div class="nav-child-item" data-page="st-random" data-click="navigateTo" data-click-args="[&quot;st-random&quot;]"><span class="nav-icon">🎲</span><span>02 随机抽查</span></div>
+        <div class="nav-child-item" data-page="st-homework" data-click="navigateTo" data-click-args="[&quot;st-homework&quot;]"><span class="nav-icon">📋</span><span>03 作业登记</span></div>
+        <div class="nav-child-item" data-page="st-chat" data-click="navigateTo" data-click-args="[&quot;st-chat&quot;]"><span class="nav-icon">💬</span><span>04 聊天框</span></div>
       </div>
-      <div class="nav-item nav-parent" data-page="analysis">
+      <div class="nav-item nav-parent" data-page="analysis" data-click="toggleNavParent" data-click-args="[&quot;analysis&quot;]">
         <span class="nav-icon">📈</span><span>03 学生学情分析</span>
         <span class="nav-parent-arrow">▶</span>
       </div>
       <div class="nav-children" id="nav-analysis">
-        <div class="nav-child-item" data-page="hw-analysis"><span class="nav-icon">📊</span><span>01 学生作业分析</span></div>
-        <div class="nav-child-item" data-page="score-analysis"><span class="nav-icon">🎯</span><span>02 学生成绩分析</span></div>
-        <div class="nav-child-item" data-page="dashboard"><span class="nav-icon">📈</span><span>03 学情看板</span></div>
+        <div class="nav-child-item" data-page="hw-analysis" data-click="navigateTo" data-click-args="[&quot;hw-analysis&quot;]"><span class="nav-icon">📊</span><span>01 学生作业分析</span></div>
+        <div class="nav-child-item" data-page="score-analysis" data-click="navigateTo" data-click-args="[&quot;score-analysis&quot;]"><span class="nav-icon">🎯</span><span>02 学生成绩分析</span></div>
+        <div class="nav-child-item" data-page="dashboard" data-click="navigateTo" data-click-args="[&quot;dashboard&quot;]"><span class="nav-icon">📈</span><span>03 学情看板</span></div>
       </div>
 
-      <div class="nav-item nav-parent" data-page="xiuxian">
+      <div class="nav-item nav-parent" data-page="xiuxian" data-click="toggleNavParent" data-click-args="[&quot;xiuxian&quot;]">
         <span class="nav-icon">🧬</span><span>04生物仙途秘境</span>
         <span class="nav-parent-arrow">▶</span>
       </div>
       <div class="nav-children" id="nav-xiuxian">
-        <div class="nav-child-item" data-page="xiuxian-archive"><span class="nav-icon">📖</span><span>01 修仙档案总库</span></div>
-        <div class="nav-child-item" data-page="xiuxian-tasks"><span class="nav-icon">📜</span><span>02 修仙任务系统</span></div>
-        <div class="nav-child-item" data-page="xiuxian-rank"><span class="nav-icon">🏆</span><span>03 修仙排行榜单</span></div>
-        <div class="nav-child-item" data-page="xiuxian-pool"><span class="nav-icon">🎴</span><span>04 修仙角色体质</span></div>
+        <div class="nav-child-item" data-page="xiuxian-archive" data-click="navigateTo" data-click-args="[&quot;xiuxian-archive&quot;]"><span class="nav-icon">📖</span><span>01 修仙档案总库</span></div>
+        <div class="nav-child-item" data-page="xiuxian-tasks" data-click="navigateTo" data-click-args="[&quot;xiuxian-tasks&quot;]"><span class="nav-icon">📜</span><span>02 修仙任务系统</span></div>
+        <div class="nav-child-item" data-page="xiuxian-rank" data-click="navigateTo" data-click-args="[&quot;xiuxian-rank&quot;]"><span class="nav-icon">🏆</span><span>03 修仙排行榜单</span></div>
+        <div class="nav-child-item" data-page="xiuxian-pool" data-click="navigateTo" data-click-args="[&quot;xiuxian-pool&quot;]"><span class="nav-icon">🎴</span><span>04 修仙角色体质</span></div>
       </div>
 
       <div class="nav-category-header">派大星的快捷工具</div>
-      <div class="nav-item" data-page="automation"><span class="nav-icon">⏰</span><span>01 自动化提醒</span></div>
-      <div class="nav-item" data-page="skill-links"><span class="nav-icon">🔗</span><span>02 Skill链接</span></div>
-      <div class="nav-item" data-page="ima-link"><span class="nav-icon">🧠</span><span>03 IMA链接入口</span></div>
-      <div class="nav-item" data-page="daily-quiz"><span class="nav-icon">📚</span><span>04 生物中考每日练习</span></div>
+      <div class="nav-item" data-page="automation" data-click="navigateTo" data-click-args="[&quot;automation&quot;]"><span class="nav-icon">⏰</span><span>01 自动化提醒</span></div>
+      <div class="nav-item" data-page="skill-links" data-click="navigateTo" data-click-args="[&quot;skill-links&quot;]"><span class="nav-icon">🔗</span><span>02 Skill链接</span></div>
+      <div class="nav-item" data-page="ima-link" data-click="navigateTo" data-click-args="[&quot;ima-link&quot;]"><span class="nav-icon">🧠</span><span>03 IMA链接入口</span></div>
+      <div class="nav-item" data-page="daily-quiz" data-click="navigateTo" data-click-args="[&quot;daily-quiz&quot;]"><span class="nav-icon">📚</span><span>04 生物中考每日练习</span></div>
+      <div class="nav-item" data-click="openModeSwitcher"><span class="nav-icon">🔄</span><span>05 模式切换（桌面/手机）</span></div>
     </nav>
     <div class="sidebar-footer">
       <div class="avatar">🧽</div>
@@ -105,8 +106,8 @@
         <button class="theme-btn" data-click="toggleThemePanel" title="主题设置">
           <span style="font-size:14px">🎨</span><span>主题</span>
         </button>
-        <button class="mode-toggle-btn" id="uiModeBtn" data-click="cycleUiMode" title="切换桌面/手机模式（自动 ⇄ 手机 ⇄ 桌面）">
-          <span id="uiModeIcon">🔄</span><span id="uiModeText">自动</span>
+        <button class="mode-toggle-btn" id="uiModeBtn" data-click="openModeSwitcher" title="切换桌面/手机模式">
+          <span id="uiModeIcon">💻</span><span id="uiModeText">桌面</span>
         </button>
         <button class="mobile-overflow-btn" id="mobileOverflowBtn" data-click="openMobileOverflow" title="更多操作" aria-label="更多操作">⋯</button>
         <div class="real-time-clock" id="realTimeClock">
