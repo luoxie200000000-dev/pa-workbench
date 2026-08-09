@@ -77,14 +77,8 @@ jobs:
 
       # --- Build APK ---
       - name: Build Android APK
-        env:
-          BUILD_TYPE: ${{ github.event.inputs.build_type || 'release' }}
         run: |
-          if [ "$BUILD_TYPE" = "release" ]; then
-            npx tauri android build --target aarch64 -- --release
-          else
-            npx tauri android build --target aarch64 -- --debug
-          fi
+          npx tauri android build --target aarch64
 
       # --- Upload artifacts ---
       - name: Upload APK (universal + per-arch)
