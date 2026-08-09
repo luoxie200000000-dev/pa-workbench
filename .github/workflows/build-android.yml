@@ -75,6 +75,15 @@ jobs:
           # Ensure Gradle wrapper is executable
           chmod +x src-tauri/gen/android/gradlew 2>/dev/null || true
 
+      # --- 只打 arm64-v8a 单包，关掉 universal 分包（省构建时间 + 下载减半）---
+      - name: Disable universal APK split
+        run: |
+          f=$(find src-tauri/gen/android -name 'build.gradle*' -path '*/app/*' | head -1)
+          echo "Patching: $f"
+          # Tauri 默认 isUniversalApk = true，改成 false；若格式不同则 sed 无命中（不影响兜底上传）
+          sed -i 's/isUniversalApk = true/isUniversalApk = false/' "$f" 2>/dev/null || true
+          grep -n 'isUniversalApk' "$f" || echo "isUniversalApk not found (ok, upload glob still filters)"
+
       # --- Build APK ---
       # 必须用 --debug：Tauri 默认打 release（未签名），Android 拒绝安装；
       # --debug 会用调试密钥自动签名，产出可直接安装的包。
@@ -82,21 +91,29 @@ jobs:
         run: |
           npx tauri android build --debug --target aarch64
 
+      # --- List built APKs (核对产物结构，便于排查) ---
+      - name: List built APKs
+        if: always()
+        run: |
+          find src-tauri/gen/android -name '*.apk' -exec ls -lh {} \; 2>/dev/null || echo "no apk found"
+
       # --- Upload artifacts ---
-      - name: Upload APK (signed debug, single-arch)
+      # 只上传 arm64-v8a 单包：下载减半，zip 里只有一个 apk，无需挑包。
+      - name: Upload APK (signed debug, arm64-v8a single-arch)
         uses: actions/upload-artifact@v4
         with:
           name: pa-workbench-android-debug
           path: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/apk/**/app-arm64-v8a-debug.apk
           retention-days: 30
 
       # --- Summary ---
       - name: Build summary
         run: |
-          echo "### ✅ APK 构建完成（debug 自动签名，可直接安装）" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ APK 构建完成（debug 自动签名，arm64-v8a 单包，可直接安装）" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "下载上方 **Artifacts** 中的 \`pa-workbench-android-debug\` zip，解压得到 .apk 即可安装。" >> $GITHUB_STEP_SUMMARY
+          echo "下载上方 **Artifacts** 中的 \`pa-workbench-android-debug\` zip，里面只有 \`app-arm64-v8a-debug.apk\` 一个文件，无需挑包，传到手机直接安装即可。" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 构建类型 | debug（已签名） |" >> $GITHUB_STEP_SUMMARY
+          echo "| 架构 | arm64-v8a 单包（已关闭 universal 分包） |" >> $GITHUB_STEP_SUMMARY
           echo "| 提交 | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
