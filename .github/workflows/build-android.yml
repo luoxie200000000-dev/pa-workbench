@@ -91,28 +91,53 @@ jobs:
         run: |
           npx tauri android build --debug --target aarch64
 
-      # --- List built APKs (核对产物结构，便于排查) ---
-      - name: List built APKs
-        if: always()
+      # --- Locate & prepare APK for upload ---
+      # Tauri 2.x 的实际输出路径不稳定（Run#16/#17 均在 outputs/apk/ 下 miss），
+      # 故用 find 全局定位后复制到固定目录，再从固定目录上传。
+      - name: Locate and prepare APK
         run: |
-          find src-tauri/gen/android -name '*.apk' -exec ls -lh {} \; 2>/dev/null || echo "no apk found"
-
-      # --- 清理：只保留 arm64-v8a 单包（删除 universal / 其他架构）---
-      - name: Keep only arm64-v8a APK
-        run: |
-          find src-tauri/gen/android -name '*.apk' ! -name '*arm64-v8a*' -exec rm -f {} \; 2>/dev/null || true
-          echo "=== Remaining APKs ==="
-          find src-tauri/gen/android -name '*.apk' -exec ls -lh {} \; 2>/dev/null || echo "no apk found"
+          mkdir -p output
+          echo "=== All APKs found ==="
+          find . -name '*.apk' -type f 2>/dev/null | while read f; do ls -lh "$f"; done || echo "(none)"
+          echo ""
+          # 复制 arm64-v8a debug 包到 output/
+          found=0
+          for f in $(find . -name '*arm64*v8a*debug*.apk' -type f 2>/dev/null); do
+            cp "$f" "output/"
+            echo "✅ Copied: $(basename "$f")"
+            found=$((found+1))
+          done
+          # fallback: 如果精确名没命中，试任何含 arm64 的 apk
+          if [ $found -eq 0 ]; then
+            for f in $(find . -name '*arm64*.apk' -type f 2>/dev/null); do
+              cp "$f" "output/"
+              echo "⚠️ Fallback copied: $(basename "$f")"
+              found=$((found+1))
+            done
+          fi
+          # final fallback: 任何 debug apk
+          if [ $found -eq 0 ]; then
+            for f in $(find . -name '*debug*.apk' -type f 2>/dev/null); do
+              cp "$f" "output/"
+              echo "🔴 Last-resort copied: $(basename "$f")"
+              found=$((found+1))
+            done
+          fi
+          echo ""
+          echo "=== Files in output/ ==="
+          ls -lh output/ 2>/dev/null || echo "(empty)"
+          if [ $found -eq 0 ]; then
+            echo "::error::No APK found anywhere in the workspace!"
+            exit 1
+          fi
 
       # --- Upload artifacts ---
-      # 用通配 **/*.apk 确保能找到（Run#16 证明精确 glob 会 miss）；
-      # 上一步已清理非 arm64 包，zip 内只有单包。
+      # 从固定 output/ 目录上传，不再依赖猜测 Tauri 输出路径。
       - name: Upload APK (signed debug, arm64-v8a single-arch)
         uses: actions/upload-artifact@v4
         with:
           name: pa-workbench-android-debug
-          path: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          path: output/*.apk
           retention-days: 30
 
       # --- Summary ---
@@ -123,5 +148,5 @@ jobs:
           echo "下载上方 **Artifacts** 中的 \`pa-workbench-android-debug\` zip，解压后只有一个 .apk 文件，传到手机直接安装即可。" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 构建类型 | debug（已签名） |" >> $GITHUB_STEP_SUMMARY
-          echo "| 架构 | arm64-v8a 单包（已清理非 arm64 包） |" >> $GITHUB_STEP_SUMMARY
+          echo "| 架构 | arm64-v8a 单包 |" >> $GITHUB_STEP_SUMMARY
           echo "| 提交 | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY

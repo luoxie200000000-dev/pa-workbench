@@ -332,7 +332,7 @@ a { color: var(--primary-dark); text-decoration: none; }
   gap: 0;
   min-height: 42px;
 }
-.sidebar.collapsed .nav-item span:not(.nav-icon) { display: none; }
+.sidebar.collapsed .nav-item { display: none; }
 .sidebar.collapsed .nav-parent-arrow { display: none; }
 .sidebar.collapsed .nav-children { display: none !important; }
 .sidebar.collapsed .nav-child-item { display: none; }
