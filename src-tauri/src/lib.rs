@@ -157,11 +157,20 @@ fn open_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn pick_folder() -> Option<String> {
     rfd::FileDialog::new()
         .pick_folder()
         .map(|p| p.to_string_lossy().to_string())
+}
+
+// Android fallback: rfd not available on mobile; use tauri-plugin-dialog or return None
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn pick_folder() -> Option<String> {
+    eprintln!("[WARN] pick_folder is not supported on Android");
+    None
 }
 
 #[tauri::command]
