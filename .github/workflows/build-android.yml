@@ -11,7 +11,7 @@ on:
       build_type:
         description: 'Build type'
         required: false
-        default: 'debug'
+        default: 'release'
         type: choice
         options:
           - debug
@@ -55,7 +55,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
 
       # --- System deps (needed for Tauri CLI on Linux) ---
       - name: Install system dependencies
@@ -78,12 +78,12 @@ jobs:
       # --- Build APK ---
       - name: Build Android APK
         env:
-          BUILD_TYPE: ${{ github.event.inputs.build_type || 'debug' }}
+          BUILD_TYPE: ${{ github.event.inputs.build_type || 'release' }}
         run: |
           if [ "$BUILD_TYPE" = "release" ]; then
-            npx tauri android build --release
+            npx tauri android build --release --target aarch64
           else
-            npx tauri android build --debug
+            npx tauri android build --debug --target aarch64
           fi
 
       # --- Upload artifacts ---
