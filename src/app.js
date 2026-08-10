@@ -2569,6 +2569,7 @@ const MOBILE_SECTIONS = {
       {page:'ima-link', icon:'\ud83e\udde0', label:'IMA链接入口'},
       {page:'daily-quiz', icon:'\ud83d\udcda', label:'每日练习'},
       {action:'openModeSwitcher', icon:'\ud83d\udd04', label:'05模式切换'},
+      {action:'toggleNotch', icon:'\ud83d\udcf1', label:'06屏幕刘海'},
       {action:'showRuntimeStatus', icon:'\ud83d\udcca', label:'运行状态'},
       {action:'openDataManager', icon:'\ud83d\udce6', label:'数据导入合并'},
       {action:'syncQuick', icon:'\u2601\ufe0f', label:'云同步'}
@@ -9601,20 +9602,31 @@ async function initApp() {
   await syncS3ConfigFromBackend();
   autoCloudPullOnStart();
 
-  // Safe area fallback: some Android WebViews return 0 for env(safe-area-inset-top)
-  (function applySafeAreaFallback() {
+  // Safe area / notch: manual toggle (default on), stored in localStorage
+  (function applySafeAreaBySetting() {
+    var notchOn = true;
+    try { var v = localStorage.getItem('notchEnabled'); if (v !== null) notchOn = v === '1'; } catch(e) {}
+    if (!notchOn) return; // user turned off notch
     var topBar = document.querySelector('.top-bar');
     if (!topBar) return;
-    var isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|webOS/i.test(navigator.userAgent);
-    var isNarrow = window.innerWidth <= 768;
-    if (isMobileDevice || isNarrow) {
-      var pt = parseFloat(getComputedStyle(topBar).paddingTop) || 0;
-      if (pt < 12) {
-        // env() likely returned 0; apply a fixed fallback
-        topBar.style.setProperty('padding-top', '28px', 'important');
-      }
+    var pt = parseFloat(getComputedStyle(topBar).paddingTop) || 0;
+    if (pt < 12) {
+      topBar.style.setProperty('padding-top', '28px', 'important');
     }
   })();
+  function toggleNotch() {
+    var notchOn = true;
+    try { var v = localStorage.getItem('notchEnabled'); if (v !== null) notchOn = v === '1'; } catch(e) {}
+    var newVal = !notchOn;
+    try { localStorage.setItem('notchEnabled', newVal ? '1' : '0'); } catch(e) {}
+    var tip = newVal ? '已开启屏幕刘海适配（28px 安全区），刷新后生效。' : '已关闭屏幕刘海适配，刷新后生效。';
+    openModal(
+      '<div style="text-align:center;padding:20px;font-size:16px">'+tip+'</div>'+
+      '<div style="text-align:center;margin-top:12px"><button class="btn btn-primary" data-click="closeActiveAndRefresh">立即刷新</button></div>',
+      { title: (newVal ? '📱' : '🚫')+' 屏幕刘海', width: '340px' }
+    );
+  }
+  function closeActiveAndRefresh() { closeModal(); setTimeout(function(){ location.reload(); }, 200); }
 
   // Display real-time clock
   updateRealTimeClock();
@@ -11635,6 +11647,7 @@ var _exportMap = {
   navigateTo: navigateTo, closeSidebar: closeSidebar, renderPage: renderPage,
   toggleNavParent: toggleNavParent,
   setUiMode: setUiMode, openModeSwitcher: openModeSwitcher,
+  toggleNotch: toggleNotch, closeActiveAndRefresh: closeActiveAndRefresh,
   commitSave: commitSave, saveState: saveState,
   showToast: showToast, closeModal: closeModal, openModal: openModal,
   openPasswordModal: openPasswordModal,
@@ -11696,6 +11709,7 @@ var _exportMap = {
   toggleSidebarCollapse: toggleSidebarCollapse, toggleTopBarMore: toggleTopBarMore,
   toggleNavParent: toggleNavParent,
   openModeSwitcher: openModeSwitcher,
+  toggleNotch: toggleNotch, closeActiveAndRefresh: closeActiveAndRefresh,
   setUiMode: setUiMode,
   toggleStudentTag: toggleStudentTag,
   saveStudentProfile: saveStudentProfile,
@@ -11982,6 +11996,7 @@ const __CLICK = {
   toggleSidebarCollapse: toggleSidebarCollapse, toggleTopBarMore: toggleTopBarMore,
   toggleNavParent: toggleNavParent,
   openModeSwitcher: openModeSwitcher,
+  toggleNotch: toggleNotch, closeActiveAndRefresh: closeActiveAndRefresh,
   toggleStudentCard: toggleStudentCard, toggleAllStudentCards: toggleAllStudentCards,
   openSyncModal: openSyncModal,
   openMobileOverflow: openMobileOverflow,
@@ -12123,6 +12138,7 @@ function __dcMbnItem(args, e, el) {
   if (action === 'showRuntimeStatus') { showRuntimeStatus(); return; }
   if (action === 'openDataManager') { openDataManager(); return; }
   if (action === 'openModeSwitcher') { openModeSwitcher(); return; }
+  if (action === 'toggleNotch') { toggleNotch(); return; }
   if (page) navigateTo(page);
 }
 function __dcMbnToggleGroup(args, e, el) {
