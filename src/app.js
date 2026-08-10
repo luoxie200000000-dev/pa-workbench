@@ -6550,6 +6550,9 @@ function switchChatClass(cls) {
   saveState();
   renderChatClassList();
   renderChatMessages();
+  // Update header title
+  var hdr = document.querySelector('.chat-header > span:first-child');
+  if (hdr) hdr.innerHTML = '💬 ' + escapeHtml(cls) + ' 课代表沟通';
 }
 
 function toggleChatSidebar() {
