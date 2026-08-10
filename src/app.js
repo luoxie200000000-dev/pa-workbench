@@ -5366,24 +5366,11 @@ function renderStudentGrid(students) {
     return;
   }
   const IS_M = isMobileUI();
-  const expandedSet = window._studentExpanded || (window._studentExpanded = {});
   const _studentHtml = students.map(s => {
     const badgeClass = getLayerBadgeClass(s);
     const layer = getStudentLayer(s);
-    if (IS_M) {
-      const initialChar = (s.name || '?').charAt(0);
-      const initial = escapeHtml(initialChar);
-      return '<div class="m-row" data-initial="' + escapeAttr(initialChar) + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]" data-ev="contextmenu" data-ev-key="evRowMenu" data-ev-args="' + escapeAttr(JSON.stringify(['student', s.id])) + '">'
-        + '<div class="m-avatar">' + initial + '</div>'
-        + '<div class="m-body">'
-          + '<div class="m-title">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
-          + '<div class="m-sub">' + escapeHtml(s.classId) + ' · ' + escapeHtml(s.gender) + ' · 优' + s.homeworkStats.excellent + '/完' + s.homeworkStats.normal + '/未' + s.homeworkStats.incomplete + '</div>'
-        + '</div>'
-        + '<span class="layer-badge ' + badgeClass + '">' + layer + '层</span>'
-        + '<span class="m-trail">›</span>'
-      + '</div>';
-    }
-    return '<div class="student-card-item layer-' + badgeClass + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]">'
+    const initialChar = (s.name || '?').charAt(0);
+    return '<div class="student-card-item layer-' + badgeClass + '" data-initial="' + escapeAttr(initialChar) + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]"' + (IS_M ? ' data-ev="contextmenu" data-ev-key="evRowMenu" data-ev-args="' + escapeAttr(JSON.stringify(['student', s.id])) + '"' : '') + '>'
       + '<div style="display:flex;justify-content:space-between;align-items:start">'
         + '<div>'
           + '<div class="student-card-name">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
@@ -5399,7 +5386,7 @@ function renderStudentGrid(students) {
       + '</div>'
     + '</div>';
   }).join('');
-  grid.innerHTML = IS_M ? '<div class="m-list">' + _studentHtml + '</div>' : _studentHtml;
+  grid.innerHTML = _studentHtml;
   if (IS_M) renderStudentAlphaIndex();
 }
 
@@ -5409,7 +5396,7 @@ function renderStudentAlphaIndex() {
   if (!isMobileUI()) { if (rail) rail.style.display = 'none'; return; }
   var grid = document.getElementById('studentGrid');
   if (!grid) { if (rail) rail.style.display = 'none'; return; }
-  var rows = grid.querySelectorAll('.m-row[data-initial]');
+  var rows = grid.querySelectorAll('[data-initial]');
   var seen = {}, order = [];
   for (var i = 0; i < rows.length; i++) {
     var ch = rows[i].getAttribute('data-initial');
@@ -5432,7 +5419,7 @@ function scrollToStudentInitial(letter) {
   if (!letter) return;
   var grid = document.getElementById('studentGrid');
   if (!grid) return;
-  var sel = '.m-row[data-initial="' + (window.CSS && CSS.escape ? CSS.escape(letter) : letter) + '"]';
+  var sel = '[data-initial="' + (window.CSS && CSS.escape ? CSS.escape(letter) : letter) + '"]';
   var target = grid.querySelector(sel);
   if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }

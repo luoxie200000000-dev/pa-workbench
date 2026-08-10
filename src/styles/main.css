@@ -1626,8 +1626,8 @@ a { color: var(--primary-dark); text-decoration: none; }
   /* Progress bar containers — narrower on mobile */
   .hw-stat-bar { min-width: 60px; }
 
-  /* ===== 学生档案：手机端优化（横向班级标签 / 自适应小格子 / 卡片折叠） ===== */
-  .student-grid { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; align-items: start; }
+  /* ===== 学生档案：手机端优化（单列卡片 / 自适应） ===== */
+  .student-grid { grid-template-columns: 1fr; gap: 10px; align-items: start; }
   .student-card-item { padding: 8px 10px; font-size: 12px; }
   .student-card-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 折叠态：只显示姓名 + 分层徽标（缩小适应） */
@@ -2591,7 +2591,6 @@ html.ui-mobile #studentAlphaIndex .alpha-item {
   border-radius: 4px; text-align: center; min-width: 14px;
 }
 html.ui-mobile #studentAlphaIndex .alpha-item:active { background: var(--primary, #007aff); color: #fff; }
-html.ui-mobile #studentGrid .m-list { padding-right: 18px; }
 
 /* 3-2 课程表：舒适列宽(横滑) + 首列(节次)吸左 + 表头吸顶 */
 html.ui-mobile .schedule-table { min-width: 680px; }
