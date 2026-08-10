@@ -1002,6 +1002,8 @@ a { color: var(--primary-dark); text-decoration: none; }
 .layer-badge.b { background: #E3F2FD; color: #1565C0; }
 .layer-badge.c { background: #FFF3E0; color: #E65100; }
 .layer-badge.d { background: #FFEBEE; color: #C62828; }
+/* 未分层：暂无排名或成绩 */
+.layer-badge.none { background: #ECEFF1; color: #78909C; }
 /* Score-based layer badges */
 .layer-badge.ap { background: #1B5E20; color: #FFFFFF; }
 .layer-badge.a2 { background: #E8F5E9; color: #2E7D32; }
@@ -1015,6 +1017,7 @@ a { color: var(--primary-dark); text-decoration: none; }
 .student-card-item.layer-b2 { border-left-color: #E65100; }
 .student-card-item.layer-cp { border-left-color: #C62828; }
 .student-card-item.layer-c2 { border-left-color: #880E4F; }
+.student-card-item.layer-none { border-left-color: #B0BEC5; }
 
 /* Trend chart modal */
 .trend-modal { max-width: 700px !important; }

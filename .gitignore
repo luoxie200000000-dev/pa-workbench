@@ -19,8 +19,12 @@ preview-*.html
 fix_*.py
 screenshot-preview.*
 
-# Build logs
+# Build logs & temp output
 src-tauri/*.log
+tauri-build.log
+cargo-check-output.txt
+target-check/
+target-verify/
 
 # Installers / archives (built separately)
 *.exe
@@ -50,3 +54,13 @@ __pycache__/
 # Backup files
 *.bak
 *.bak_*
+
+# Local dev notes / handoff docs (not part of source)
+代码审查报告-优化建议.md
+安全提示-请先阅读.txt
+开发环境与优化评估.md
+手机适配方案.md
+生物仙途开发指令_v1.0.md
+自适应与交互优化方案.md
+迁移还原说明.txt
+项目交接说明.md

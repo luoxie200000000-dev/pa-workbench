@@ -2190,8 +2190,8 @@ function renderCategoryDetail(catKey, count) {
 function doExportData() {
   var exportObj = {
     _meta: {
-      appName: '派大星的工作台',
-      appVersion: '2.1.0',
+      appName: '派大星',
+      appVersion: '2.3.1',
       exportDate: new Date().toISOString(),
       exportTimestamp: Date.now()
     },
@@ -2205,39 +2205,23 @@ function doExportData() {
   exportObj.state = stateCopy;
 
   var json = JSON.stringify(exportObj, null, 2);
-  var fileName = '派大星工作台_数据备份_' + new Date().toISOString().slice(0, 10) + '.json';
+  var fileName = '派大星_数据备份_' + new Date().toISOString().slice(0, 10) + '.json';
 
   if (isTauriApp()) {
-    // Tauri 环境：使用 dialog save
-    __invoke('plugin:dialog|save', { defaultPath: fileName, title: '保存数据备份', filters: [{ name: 'JSON', extensions: ['json'] }] }).then(function(filePath) {
+    __invoke('plugin:dialog|save', { options: { defaultPath: fileName, title: '保存数据备份', filters: [{ name: 'JSON', extensions: ['json'] }] } }).then(function(filePath) {
       if (!filePath) return;
-      return __invoke('plugin:shell|open', { path: filePath }).catch(function() {});
-    }).then(function() {
-      // Write file using a different approach
-      // Since we can't directly write files via shell, use a blob download
-      _downloadJson(json, fileName);
-      showToast('数据已导出：' + fileName, 'success');
+      return __invoke('write_file', { path: filePath, content: json }).then(function() {
+        showToast('数据已导出：' + filePath, 'success');
+      });
     }).catch(function(e) {
-      // Fallback to download
-      _downloadJson(json, fileName);
-      showToast('数据已导出（下载方式）', 'success');
+      console.error('导出失败:', e);
+      _downloadBlob(json, fileName, 'application/json');
+      showToast('导出失败，已使用浏览器下载', 'warn');
     });
   } else {
-    _downloadJson(json, fileName);
+    _downloadBlob(json, fileName, 'application/json');
     showToast('数据已导出：' + fileName, 'success');
   }
-}
-
-function _downloadJson(json, fileName) {
-  var blob = new Blob([json], { type: 'application/json' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(function() { URL.revokeObjectURL(url); }, 100);
 }
 
 // 导入数据（覆盖模式）
@@ -2684,7 +2668,7 @@ function openModeSwitcher() {
 function showFirstLaunchModePicker() {
   var html = '<div style="text-align:center;padding:16px 0 8px">' +
     '<div style="font-size:40px;margin-bottom:12px">🧽</div>' +
-    '<div style="font-size:18px;font-weight:700;color:var(--text-heading);margin-bottom:4px">欢迎使用派大星工作台</div>' +
+    '<div style="font-size:18px;font-weight:700;color:var(--text-heading);margin-bottom:4px">欢迎使用派大星</div>' +
     '<div style="font-size:14px;color:var(--text-muted);margin-bottom:24px">请选择你喜欢的显示模式</div>' +
     '</div>';
   html += '<div style="display:flex;gap:12px;margin-bottom:16px">';
@@ -3587,7 +3571,7 @@ function openTaskModal(id) {
     <div class="modal-actions">
       ${isEdit?`<button class="btn btn-danger btn-sm" data-click="__dcDeleteTaskClose" data-click-args="${escapeAttr(JSON.stringify([id]))}">删除</button>`:''}
       <button class="btn btn-outline" data-click="closeModal">取消</button>
-      <button class="btn btn-primary" data-click="saveTask" data-click-args="${escapeAttr(JSON.stringify([isEdit?`'id'`:'null']))}">${isEdit?'保存':'创建'}</button>
+      <button class="btn btn-primary" data-click="saveTask" data-click-args="${escapeAttr(JSON.stringify([isEdit ? id : 'null']))}">${isEdit?'保存':'创建'}</button>
     </div>
   `);
 }
@@ -3604,7 +3588,7 @@ function saveTask(id) {
     urgent: document.getElementById('taskUrgent').checked,
     completed: document.getElementById('taskCompleted').checked
   };
-  if (id) {
+  if (id && id !== 'null') {
     const t = state.tasks.find(x=>x.id===id);
     Object.assign(t, data);
     showToast('任务已更新');
@@ -3702,21 +3686,48 @@ function renderPlanList() {
 function downloadTemplate() {
   const csv = '\ufeff序号,计划名称,计划内容,截止时间,负责人\n1,八年级上册第一章教学计划,动物的主要类群,2026-09-15,派大星\n2,,,,\n3,,,,\n';
   downloadFile(csv, '教学计划模板.csv', 'text/csv');
-  showToast('模板已下载');
 }
 
 function downloadSampleTemplate() {
   const csv = '\ufeff序号,计划名称,计划内容,截止时间,负责人\n1,第一章：动物的主要类群,腔肠动物、扁形动物、线形动物、环节动物等分类教学,2026-09-15,派大星\n2,第二章：动物的运动和行为,先天性行为与学习行为、社会行为特征,2026-09-30,派大星\n3,第三章：动物在生物圈中的作用,促进物质循环、维持生态平衡,2026-10-20,海绵宝宝\n4,期中复习与考试,全册前半学期复习及统考,2026-10-31,派大星\n5,第四章：细菌和真菌,细菌真菌分布、培养实验,2026-11-20,海绵宝宝\n6,第五章：病毒,病毒的种类、结构与繁殖,2026-11-30,派大星\n7,期末复习,全册复习与期末考试,2027-01-10,派大星\n';
   downloadFile(csv, '教学计划示例模板.csv', 'text/csv');
-  showToast('示例模板已下载');
+}
+
+function _downloadBlob(content, filename, type) {
+  var blob = new Blob([content], { type: (type||'text/plain')+';charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 100);
 }
 
 function downloadFile(content, filename, type) {
-  const blob = new Blob([content], { type: type+';charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  if (isTauriApp()) {
+    var ext = type && type.indexOf('json') >= 0 ? 'json' : type && type.indexOf('csv') >= 0 ? 'csv' : 'txt';
+    var filterName = ext === 'csv' ? 'CSV' : ext === 'json' ? 'JSON' : '文本';
+    __invoke('plugin:dialog|save', {
+      options: {
+        defaultPath: filename,
+        title: '保存文件',
+        filters: [{ name: filterName + ' 文件', extensions: [ext] }]
+      }
+    }).then(function(filePath) {
+      if (!filePath) return;
+      return __invoke('write_file', { path: filePath, content: content }).then(function() {
+        showToast('文件已保存：' + filePath, 'success');
+      });
+    }).catch(function(e) {
+      console.error('保存失败:', e);
+      _downloadBlob(content, filename, type);
+      showToast('保存失败，已使用浏览器下载', 'warn');
+    });
+  } else {
+    _downloadBlob(content, filename, type);
+    showToast('文件已下载：' + filename, 'success');
+  }
 }
 
 function handlePlanDrop(e) {
@@ -4327,7 +4338,7 @@ function openAdjustmentModal(editId) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" data-click="closeModal">取消</button>
-      <button class="btn btn-primary" data-click="saveAdjustment" data-click-args="${escapeAttr(JSON.stringify([isEdit ? `'editId'` : '']))}">保存</button>
+      <button class="btn btn-primary" data-click="saveAdjustment" data-click-args="${escapeAttr(JSON.stringify([isEdit ? editId : '']))}">保存</button>
     </div>
   `);
 }
@@ -4381,14 +4392,7 @@ function downloadScheduleTemplate() {
       csv += `${dn},第${getRegularPeriodIndex(p.n)}节,${p.start||''},${p.end||''},${existing?existing.classId:''},${existing?existing.subject:ptype==='morning'?'早读':ptype==='evening'?'晚自习':'生物'},${typeLabel}\n`;
     });
   });
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = '课程表模板.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-  showToast('模板已下载，填好后点击「导入课表」上传');
+  downloadFile(csv, '课程表模板.csv', 'text/csv');
 }
 
 function handleScheduleUpload(event) {
@@ -4904,7 +4908,7 @@ function openProgressModal(id) {
     <div class="modal-actions">
       ${isEdit?`<button class="btn btn-danger btn-sm" data-click="__dcDeleteProgressClose" data-click-args="${escapeAttr(JSON.stringify([id]))}">删除</button>`:''}
       <button class="btn btn-outline" data-click="closeModal">取消</button>
-      <button class="btn btn-primary" data-click="saveProgress" data-click-args="${escapeAttr(JSON.stringify([isEdit?`'id'`:'null']))}">${isEdit?'保存':'创建'}</button>
+      <button class="btn btn-primary" data-click="saveProgress" data-click-args="${escapeAttr(JSON.stringify([isEdit ? id : 'null']))}">${isEdit?'保存':'创建'}</button>
     </div>
   `);
 }
@@ -4919,7 +4923,7 @@ function saveProgress(id) {
     status: document.getElementById('progStatus').value,
     reflection: document.getElementById('progReflection').value.trim()
   };
-  if (id) {
+  if (id && id !== 'null') {
     const p = state.progress.find(x=>x.id===id);
     Object.assign(p, data);
     showToast('进度已更新');
@@ -5371,13 +5375,16 @@ function renderStudentGrid(students) {
     const badgeClass = getLayerBadgeClass(s);
     const layer = getStudentLayer(s);
     const initialChar = (s.name || '?').charAt(0);
+    const layerBadge = layer === null
+      ? '<span class="layer-badge none" title="暂无排名或成绩">未分层</span>'
+      : '<span class="layer-badge ' + badgeClass + '">' + layer + '层</span>';
     return '<div class="student-card-item layer-' + badgeClass + '" data-initial="' + escapeAttr(initialChar) + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]"' + (IS_M ? ' data-ev="contextmenu" data-ev-key="evRowMenu" data-ev-args="' + escapeAttr(JSON.stringify(['student', s.id])) + '"' : '') + '>'
       + '<div style="display:flex;justify-content:space-between;align-items:start">'
         + '<div>'
           + '<div class="student-card-name">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
           + '<div class="student-card-info">' + escapeHtml(s.classId) + ' · ' + escapeHtml(s.gender) + ' · ' + escapeHtml(s.scoreTrend) + '</div>'
         + '</div>'
-        + '<div style="display:flex;align-items:center;gap:6px"><span class="layer-badge ' + badgeClass + '">' + layer + '层</span></div>'
+        + '<div style="display:flex;align-items:center;gap:6px">' + layerBadge + '</div>'
       + '</div>'
       + '<div class="student-card-tags">' + s.tags.map(function(t){ return '<span class="tag tag-normal">' + escapeHtml(t) + '</span>'; }).join('') + '</div>'
       + '<div style="margin-top:10px;display:flex;gap:10px;font-size:11px;color:var(--text-muted)">'
@@ -5488,11 +5495,15 @@ function openStudentProfile(id) {
         </div>
         <div class="profile-row"><span class="label">分层信息</span>
           <div style="flex:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span class="layer-badge ${classLayer.toLowerCase()}">${classLayer}层</span>
-            <span style="font-size:11px;color:var(--text-muted)">班级分层 · ${getClassLayerLabel(classLayer)}</span>
+            ${classLayer === null
+              ? '<span class="layer-badge none">未分层</span>'
+              : '<span class="layer-badge ' + classLayer.toLowerCase() + '">' + classLayer + '层</span>'}
+            <span style="font-size:11px;color:var(--text-muted)">班级分层${classLayer === null ? '（暂无数据）' : ' · ' + getClassLayerLabel(classLayer)}</span>
             <span style="color:var(--text-muted);margin:0 2px">|</span>
-            <span class="layer-badge ${scoreToLayerCSS(scoreLayer)}">${scoreLayer}层</span>
-            <span style="font-size:11px;color:var(--text-muted)">成绩分层 · ${getScoreLayerLabel(scoreLayer)}</span>
+            ${scoreLayer === null
+              ? '<span class="layer-badge none">未分层</span>'
+              : '<span class="layer-badge ' + scoreToLayerCSS(scoreLayer) + '">' + scoreLayer + '层</span>'}
+            <span style="font-size:11px;color:var(--text-muted)">成绩分层${scoreLayer === null ? '（暂无数据）' : ' · ' + getScoreLayerLabel(scoreLayer)}</span>
           </div>
         </div>
         ${hasScores ? `
@@ -5564,7 +5575,6 @@ function saveStudentProfile(id) {
 function downloadStudentTemplate() {
   const csv = '\ufeff学号,姓名,性别,班级,分层(A/B/C/D),成绩趋势,标签(用/分隔),作业优秀次数,作业正常次数,作业未完成次数,教师描述\n1001,张三,男,1班,A,稳步提升,积极举手/作业认真,5,3,0,学习态度端正\n1002,李四,女,1班,B,小幅度进步,需督促,2,5,1,需加强课后复习\n';
   downloadFile(csv, '学生档案模板.csv', 'text/csv');
-  showToast('学生档案模板已下载');
 }
 
 function handleStudentUpload(input) {
@@ -5677,10 +5687,12 @@ function renderTaskInfoList() {
           ${t.answer ? `<div style="color:var(--danger);font-weight:500;margin-bottom:${images.length>0?'8px':'0'}">🔑 答案：${escapeHtml(t.answer)}</div>` : ''}
           ${images.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${images.map((img,i) => `<img src="${safeImageSrc(img)}" alt="示意图${i+1}" style="max-width:200px;max-height:150px;border-radius:6px;border:1px solid var(--border)" data-click="__noop">`).join('')}</div>` : ''}
           ${!hasAnswer ? '<span class="text-muted">暂无答案</span>' : ''}
-          <div style="margin-top:8px"><button class="btn btn-outline btn-sm" data-click="__dcStopOpenTaskInfo" data-click-args="${escapeAttr(JSON.stringify([t.id]))}">✏️ 编辑</button></div>
         </div>
       </div>
-      <div style="white-space:nowrap"><button class="btn-icon" data-click="__dcStopDelStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}">🗑️</button></div>
+      <div style="white-space:nowrap;display:flex;gap:4px">
+        <button class="btn-icon" data-click="__dcStopOpenTaskInfo" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="编辑">✏️</button>
+        <button class="btn-icon" data-click="__dcStopDelStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="删除">🗑️</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -5730,14 +5742,14 @@ function openTaskInfoEditModal(id) {
     </div>
     <div class="form-group">
       <label class="form-label">生物示意图（可多图上传）</label>
-      <input type="file" accept="image/*" multiple data-ev="change" data-ev-key="ev30" data-ev-args="${escapeAttr(JSON.stringify([t ? ('' + t.id) : 'null']))}">
+      <input type="file" accept="image/*" multiple data-ev="change" data-ev-key="ev30" data-ev-args="${escapeAttr(JSON.stringify([t ? t.id : 'null']))}">
       <div id="taskImagePreview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
-        ${images.map((img,i) => `<div style="position:relative"><img src="${safeImageSrc(img)}" style="max-width:120px;max-height:100px;border-radius:6px;border:1px solid var(--border)"><span style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer" data-click="removeTaskImage" data-click-args="${escapeAttr(JSON.stringify([t?`'t.id'`:'null', i]))}">✕</span></div>`).join('')}
+        ${images.map((img,i) => `<div style="position:relative"><img src="${safeImageSrc(img)}" style="max-width:120px;max-height:100px;border-radius:6px;border:1px solid var(--border)"><span style="position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer" data-click="removeTaskImage" data-click-args="${escapeAttr(JSON.stringify([t ? t.id : 'null', i]))}">✕</span></div>`).join('')}
       </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-outline" data-click="closeModal">取消</button>
-      <button class="btn btn-primary" data-click="saveTaskInfo" data-click-args="${escapeAttr(JSON.stringify([t?`'t.id'`:'null']))}">保存</button>
+      <button class="btn btn-primary" data-click="saveTaskInfo" data-click-args="${escapeAttr(JSON.stringify([t ? t.id : 'null']))}">保存</button>
     </div>
   `);
 }
@@ -5825,9 +5837,22 @@ function isTaskForClass(task, cls) {
 }
 
 function downloadTaskInfoTemplate() {
-  const csv = '\ufeff任务标题,作业内容,答案,布置日期,截止日期,班级\n第一章课后练习,完成课本P15-16练习1-5题,1.B 2.C,2026-09-01,2026-09-03,1班\n';
+  const csv = '\ufeff任务标题,作业内容,答案,布置日期,截止日期,班级\n'
+    + '第一章课后练习,完成课本P15-16练习1-5题,1.B 2.C,2026-09-01,2026-09-03,1班\n'
+    + '细胞结构观察,画动物细胞和植物细胞结构图并标注,,2026-09-05,2026-09-08,1班、4班\n'
+    + '注意：班级列支持多个班级，用顿号(、)、逗号(,)或空格分隔。如：1班、4班、8班\n';
   downloadFile(csv, '学生作业任务模板.csv', 'text/csv');
-  showToast('作业任务模板已下载');
+}
+
+function parseClassIdsFromClassField(raw) {
+  if (!raw) return ['1班'];
+  // 按顿号、逗号、空格、分号分割
+  const parts = raw.split(/[、,，;；\s]+/).map(s => s.trim()).filter(s => s);
+  if (parts.length === 0) return ['1班'];
+  // 过滤无效班级名（必须以"班"结尾或匹配班级列表）
+  const valid = getClasses();
+  const result = parts.filter(p => valid.includes(p));
+  return result.length > 0 ? result : parts;
 }
 
 function handleTaskInfoUpload(input) {
@@ -5840,8 +5865,11 @@ function handleTaskInfoUpload(input) {
     if (lines.length < 2) { showToast('文件格式不对', 'error'); return; }
     let added = 0;
     for (let i = 1; i < lines.length; i++) {
+      // 跳过注释行（以"注意"开头）
+      if (lines[i].trim().startsWith('注意')) continue;
       const cols = lines[i].split(',').map(c => c.trim());
       if (!cols[0]) continue;
+      const classIds = parseClassIdsFromClassField(cols[5]);
       state.studentTasks.push({
         id: uid(),
         title: cols[0],
@@ -5849,8 +5877,8 @@ function handleTaskInfoUpload(input) {
         answer: cols[2] || '',
         assignedDate: cols[3] || new Date().toISOString().slice(0,10),
         dueDate: cols[4] || '',
-        classId: cols[5] || '1班',
-        classIds: [cols[5] || '1班']
+        classId: classIds[0],
+        classIds: classIds
       });
       added++;
     }
@@ -7262,7 +7290,7 @@ function renderDashboard(container) {
                     <td>${escapeHtml(s.classId)}</td>
                     <td>${s.incompleteCount > 0 ? `<span style="color:var(--danger);font-weight:600;cursor:pointer;text-decoration:underline" data-click="showHwAnomalyDetail" data-click-args="[&quot;${s.id}&quot;, &quot;incomplete&quot;]">${s.incompleteCount}</span>` : '<span class="text-muted">0</span>'}</td>
                     <td>${s.perfunctoryCount > 0 ? `<span style="color:#E65100;font-weight:600;cursor:pointer;text-decoration:underline" data-click="showHwAnomalyDetail" data-click-args="[&quot;${s.id}&quot;, &quot;perfunctory&quot;]">${s.perfunctoryCount}</span>` : '<span class="text-muted">0</span>'}</td>
-                    <td><span class="layer-badge ${getStudentLayer(s).toLowerCase()}">${getStudentLayer(s)}层</span></td>
+                    <td>${(() => { const _l = getStudentLayer(s); return _l === null ? '<span class="layer-badge none">未分层</span>' : '<span class="layer-badge ' + _l.toLowerCase() + '">' + _l + '层</span>'; })()}</td>
                   </tr>
                 `).join('')}</tbody>
               </table>
@@ -7424,29 +7452,7 @@ function getStudentLayer(student) {
   // 先查缓存（同一渲染周期内已算过则直接返回）
   if (_layerCache.has(student.id)) return _layerCache.get(student.id);
 
-  if (state.layerMode === 'score') {
-    // 成绩分层模式：以最新考试分数为准
-    let examDateMap = _layerCache._examDateMap;
-    if (!examDateMap) {
-      examDateMap = {};
-      state.scores.forEach(s => {
-        if (s.examName && s.date && !examDateMap[s.examName]) {
-          examDateMap[s.examName] = s.date;
-        }
-      });
-      _layerCache._examDateMap = examDateMap;
-    }
-    const studentScores = state.scores
-      .filter(s => s.studentId === student.id && s.score !== undefined)
-      .sort((a, b) => (examDateMap[b.examName] || '').localeCompare(examDateMap[a.examName] || ''));
-    const layer = studentScores.length > 0
-      ? scoreToLayer(studentScores[0].score)
-      : 'C'; // 无成绩默认 C
-    _layerCache.set(student.id, layer);
-    return layer;
-  }
-
-  // 班级分层模式（默认）：以最新考试班级排名为准
+  // 计算 examDateMap（一次复用）
   let examDateMap = _layerCache._examDateMap;
   if (!examDateMap) {
     examDateMap = {};
@@ -7457,20 +7463,32 @@ function getStudentLayer(student) {
     });
     _layerCache._examDateMap = examDateMap;
   }
-  const studentScores = state.scores
-    .filter(s => s.studentId === student.id && s.classRank)
-    .sort((a, b) => {
-      return (examDateMap[b.examName] || '').localeCompare(examDateMap[a.examName] || '');
-    });
-  const layer = studentScores.length > 0
-    ? rankToLayer(studentScores[0].classRank)
-    : 'D'; // 无成绩默认 D
+
+  let layer = null;
+  if (state.layerMode === 'score') {
+    // 成绩分层模式：以最新考试分数为准
+    const studentScores = state.scores
+      .filter(s => s.studentId === student.id && s.score !== undefined && s.score !== null && s.score !== '')
+      .sort((a, b) => (examDateMap[b.examName] || '').localeCompare(examDateMap[a.examName] || ''));
+    if (studentScores.length > 0) layer = scoreToLayer(studentScores[0].score);
+  } else {
+    // 班级分层模式（默认）：以最新考试班级排名为准
+    const studentScores = state.scores
+      .filter(s => s.studentId === student.id && s.classRank)
+      .sort((a, b) => (examDateMap[b.examName] || '').localeCompare(examDateMap[a.examName] || ''));
+    if (studentScores.length > 0) layer = rankToLayer(studentScores[0].classRank);
+  }
+
+  // 若 scoreToLayer 返回 '—'（破折号表示无效分数），也视为未分层
+  if (layer === '—' || layer === '') layer = null;
+
   _layerCache.set(student.id, layer);
   return layer;
 }
 
 function getLayerBadgeClass(student) {
   const layer = getStudentLayer(student);
+  if (layer === null) return 'none';
   if (state.layerMode === 'score') return scoreToLayerCSS(layer);
   return layer.toLowerCase();
 }
@@ -7993,8 +8011,8 @@ function renderScoreAnalysis(container) {
             <td>${layerChangeBadge}</td>
             <td>${progressBadge}${progress.gradeRankDiff !== undefined ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">级排${progress.gradeRankDiff>=0?'+':''}${progress.gradeRankDiff}</div>` : ''}</td>
             <td>
-              <button class="btn-icon" data-click="editScore" data-click-args="' + escapeAttr(JSON.stringify(s.id)) + '" title="编辑成绩">✏️</button>
-              <button class="btn-icon" data-click="deleteScore" data-click-args="' + escapeAttr(JSON.stringify(s.id)) + '" title="删除成绩">🗑️</button>
+              <button class="btn-icon" data-click="editScore" data-click-args="${escapeAttr(JSON.stringify([s.id]))}" title="编辑成绩">✏️</button>
+              <button class="btn-icon" data-click="deleteScore" data-click-args="${escapeAttr(JSON.stringify([s.id]))}" title="删除成绩">🗑️</button>
             </td>
           </tr>`;
         }).join('')}
@@ -8190,7 +8208,6 @@ function renderScoreDistribution(dist) {
 function downloadScoreTemplate() {
   const csv = '\ufeff学号,姓名,班级,成绩,考试名称,日期\n1001,张三,1班,85,第一章单元测,2026-09-10\n1002,李四,1班,92,第一章单元测,2026-09-10\n2001,王五,2班,78,第一章单元测,2026-09-10\n3001,赵六,3班,88,第一章单元测,2026-09-10\n';
   downloadFile(csv, '学生成绩模板.csv', 'text/csv');
-  showToast('成绩模板已下载（含任教班/非任教班示例）');
 }
 
 function openScoreEntryModal() {
@@ -8371,8 +8388,7 @@ function exportScoresCSV() {
     const layerChange = progress.layerChange === 'up' ? '分层提升' : progress.layerChange === 'down' ? '分层下滑' : '持平';
     csv += `${s.gradeRank||''},${s.name},${s.classId},${s.score},${s.classRank||''},${s.gradeRank||''},${layer}层,${layerChange},${progress.progressLabel||'首次'}\n`;
   });
-  downloadFile(csv, `${exam}_成绩单.csv`, 'text/csv');
-  showToast('成绩单已导出');
+  downloadFile(csv, exam + '_成绩单.csv', 'text/csv');
 }
 
 function editScore(id) {
@@ -8554,7 +8570,7 @@ function openReminderModal(id) {
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
       <button class="btn btn-outline" data-click="closeModal">取消</button>
-      <button class="btn btn-primary" data-click="saveReminder" data-click-args="${escapeAttr(JSON.stringify([r?`'r.id'`:'null']))}">保存</button>
+      <button class="btn btn-primary" data-click="saveReminder" data-click-args="${escapeAttr(JSON.stringify([r ? r.id : null]))}">保存</button>
     </div>
   `);
 }
@@ -12297,22 +12313,44 @@ function __closeSheet() {
 /* 确认弹窗：message 文本；opts={danger,confirmText,cancelText} */
 function appConfirm(message, opts) {
   opts = opts || {};
-  if (!isMobileUI()) return Promise.resolve(window.confirm(message));
-  return new Promise(function(resolve) {
-    __confirmResolver = resolve;
-    var danger = opts.danger ? ' danger' : '';
-    var ok = opts.confirmText || '确定';
-    var cancel = opts.cancelText || '取消';
-    var root = __getSheetRoot();
-    root.innerHTML =
-      '<div class="sheet-overlay" data-click="__dcSheetCancel"></div>' +
-      '<div class="action-sheet" role="alertdialog" aria-modal="true">' +
-        '<div class="action-sheet-msg">' + escapeHtml(message).replace(/\n/g, '<br>') + '</div>' +
-        '<button class="action-sheet-btn' + danger + '" data-click="__dcSheetOk">' + escapeHtml(ok) + '</button>' +
-        '<button class="action-sheet-btn cancel" data-click="__dcSheetCancel">' + escapeHtml(cancel) + '</button>' +
-      '</div>';
-    requestAnimationFrame(function(){ root.classList.add('show'); });
-  });
+  // Tauri 桌面环境：dialog plugin 内部统一用 plugin:dialog|message
+  // 关键坑：直接调 __invoke 绕过了 JS 包装层，必须用 Rust 端格式
+  //   - buttons 用字符串 'OkCancel'（Rust enum unit variant），不用 JS 层的 {ok, cancel}
+  //   - 返回值是 MessageDialogResult 枚举字符串 'Ok'/'Cancel'，不是 boolean
+  //   - message 命令参数是平铺的（title, message, kind, buttons），不像 save/open 要包在 options 里
+  if (isTauriApp()) {
+    return __invoke('plugin:dialog|message', {
+      message: message,
+      title: '请确认',
+      kind: opts.danger ? 'warning' : 'info',
+      buttons: 'OkCancel'
+    }).then(function(clicked) {
+      return clicked === 'Ok';
+    }).catch(function(e) {
+      console.error('confirm dialog failed:', e);
+      return false;
+    });
+  }
+  // 移动 UI：用自定义 ActionSheet
+  if (isMobileUI()) {
+    return new Promise(function(resolve) {
+      __confirmResolver = resolve;
+      var danger = opts.danger ? ' danger' : '';
+      var ok = opts.confirmText || '确定';
+      var cancel = opts.cancelText || '取消';
+      var root = __getSheetRoot();
+      root.innerHTML =
+        '<div class="sheet-overlay" data-click="__dcSheetCancel"></div>' +
+        '<div class="action-sheet" role="alertdialog" aria-modal="true">' +
+          '<div class="action-sheet-msg">' + escapeHtml(message).replace(/\n/g, '<br>') + '</div>' +
+          '<button class="action-sheet-btn' + danger + '" data-click="__dcSheetOk">' + escapeHtml(ok) + '</button>' +
+          '<button class="action-sheet-btn cancel" data-click="__dcSheetCancel">' + escapeHtml(cancel) + '</button>' +
+        '</div>';
+      requestAnimationFrame(function(){ root.classList.add('show'); });
+    });
+  }
+  // 浏览器环境：降级到原生 confirm
+  return Promise.resolve(window.confirm(message));
 }
 
 /* 动作面板：items=[{label,danger,onClick}]；opts={title,cancelText} */

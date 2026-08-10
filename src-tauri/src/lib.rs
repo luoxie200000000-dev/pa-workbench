@@ -599,6 +599,19 @@ async fn s3_test(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn write_file(path: String, content: String) -> Result<String, String> {
+    let path_buf = PathBuf::from(&path);
+    if let Some(parent) = path_buf.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("创建目录失败: {}", e))?;
+    }
+    fs::write(&path_buf, &content)
+        .map_err(|e| format!("写入文件失败: {}", e))?;
+    eprintln!("[FS] 文件已保存: {}", path);
+    Ok(path)
+}
+
+#[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     eprintln!("[Tauri] 正在退出应用...");
     ALLOW_EXIT.store(true, Ordering::SeqCst);
@@ -706,7 +719,8 @@ pub fn run() {
             s3_download,
             s3_test,
             exit_app,
-            db_execute
+            db_execute,
+            write_file
         ])
         .run(tauri::generate_context!())
         .expect("启动失败");
