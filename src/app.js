@@ -10846,7 +10846,7 @@ function xiuxianRenderRank() {
   list.sort(function (a, b) {
     return xiuxianRankMode === 'combat' ? (xiuxianCombat(b.p) - xiuxianCombat(a.p)) : (b.p.stone - a.p.stone);
   });
-  var rows = '<div class="x-rank-row head"><div class="x-rank-medal">#</div><div class="x-rank-avatar">头像</div><div>修士</div><div class="x-rank-val">境界</div><div class="x-rank-val">' + (xiuxianRankMode === 'combat' ? '战力' : '灵石') + '</div></div>';
+  var rows = '<div class="x-rank-row head"><div class="x-rank-medal">#</div><div class="x-rank-avatar">头像</div><div class="x-rank-name">修士</div><div class="x-rank-val">境界</div><div class="x-rank-val">' + (xiuxianRankMode === 'combat' ? '战力' : '灵石') + '</div></div>';
   list.forEach(function (o, i) {
     var rankIdx = i + 1;
     var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : rankIdx;
@@ -11421,7 +11421,7 @@ function renderXiuxianRankPage(area) {
     if (_xRankPageMode === 'realm') return xiuxianRealmObj(p.realm).name + ' · ' + (p.spirit||0) + '气';
     return p.premium || 0;
   };
-  var rows = '<div class="x-rank-row head"><div class="x-rank-medal">#</div><div class="x-rank-avatar">头像</div><div>修士</div>' + (scope === 'grade' ? '<div class="x-rank-class">班级</div>' : '') + '<div class="x-rank-val">境界</div><div class="x-rank-val">'+modeLabel+'</div></div>';
+  var rows = '<div class="x-rank-row head"><div class="x-rank-medal">#</div><div class="x-rank-avatar">头像</div><div class="x-rank-name">修士</div>' + (scope === 'grade' ? '<div class="x-rank-class">班级</div>' : '') + '<div class="x-rank-val">境界</div><div class="x-rank-val">'+modeLabel+'</div></div>';
   list.forEach(function(o, i) {
     var isSelf = o.id === selfId;
     var rankIdx = i + 1;
