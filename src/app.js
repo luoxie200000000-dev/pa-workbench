@@ -9618,15 +9618,16 @@ async function initApp() {
   autoCloudPullOnStart();
 
   // Safe area / notch: manual toggle (default on), stored in localStorage
+  // Apply to #app container so entire interface (sidebar + content) shifts down together
   (function applySafeAreaBySetting() {
     var notchOn = true;
     try { var v = localStorage.getItem('notchEnabled'); if (v !== null) notchOn = v === '1'; } catch(e) {}
     if (!notchOn) return; // user turned off notch
-    var topBar = document.querySelector('.top-bar');
-    if (!topBar) return;
-    var pt = parseFloat(getComputedStyle(topBar).paddingTop) || 0;
+    var appEl = document.getElementById('app');
+    if (!appEl) return;
+    var pt = parseFloat(getComputedStyle(appEl).paddingTop) || 0;
     if (pt < 12) {
-      topBar.style.setProperty('padding-top', '28px', 'important');
+      appEl.style.setProperty('padding-top', '28px', 'important');
     }
   })();
 
