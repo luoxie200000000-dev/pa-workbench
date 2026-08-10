@@ -9462,6 +9462,21 @@ function generateStandaloneHTML() {
   return '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 }
 
+/* ===================== 屏幕刘海手动切换（模块级，供 _exportMap/__CLICK 引用） ===================== */
+function toggleNotch() {
+  var notchOn = true;
+  try { var v = localStorage.getItem('notchEnabled'); if (v !== null) notchOn = v === '1'; } catch(e) {}
+  var newVal = !notchOn;
+  try { localStorage.setItem('notchEnabled', newVal ? '1' : '0'); } catch(e) {}
+  var tip = newVal ? '已开启屏幕刘海适配（28px 安全区），刷新后生效。' : '已关闭屏幕刘海适配，刷新后生效。';
+  openModal(
+    '<div style="text-align:center;padding:20px;font-size:16px">'+tip+'</div>'+
+    '<div style="text-align:center;margin-top:12px"><button class="btn btn-primary" data-click="closeActiveAndRefresh">立即刷新</button></div>',
+    { title: (newVal ? '📱' : '🚫')+' 屏幕刘海', width: '340px' }
+  );
+}
+function closeActiveAndRefresh() { closeModal(); setTimeout(function(){ location.reload(); }, 200); }
+
 /* ===================== Init ===================== */
 async function initApp() {
   // Tauri 环境：先初始化 SQLite 数据库（有超时保护，不会卡死）
@@ -9614,19 +9629,6 @@ async function initApp() {
       topBar.style.setProperty('padding-top', '28px', 'important');
     }
   })();
-  function toggleNotch() {
-    var notchOn = true;
-    try { var v = localStorage.getItem('notchEnabled'); if (v !== null) notchOn = v === '1'; } catch(e) {}
-    var newVal = !notchOn;
-    try { localStorage.setItem('notchEnabled', newVal ? '1' : '0'); } catch(e) {}
-    var tip = newVal ? '已开启屏幕刘海适配（28px 安全区），刷新后生效。' : '已关闭屏幕刘海适配，刷新后生效。';
-    openModal(
-      '<div style="text-align:center;padding:20px;font-size:16px">'+tip+'</div>'+
-      '<div style="text-align:center;margin-top:12px"><button class="btn btn-primary" data-click="closeActiveAndRefresh">立即刷新</button></div>',
-      { title: (newVal ? '📱' : '🚫')+' 屏幕刘海', width: '340px' }
-    );
-  }
-  function closeActiveAndRefresh() { closeModal(); setTimeout(function(){ location.reload(); }, 200); }
 
   // Display real-time clock
   updateRealTimeClock();
