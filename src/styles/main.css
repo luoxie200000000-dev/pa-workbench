@@ -2293,13 +2293,21 @@ a { color: var(--primary-dark); text-decoration: none; }
 .ui-mobile .toolbar { position: relative; z-index: 5; background: var(--bg-page); padding-top: 8px; padding-bottom: 8px; flex-direction: column; align-items: stretch; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
 .ui-mobile .toolbar > * { width: 100%; }
 .ui-mobile .search-bar { flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-.ui-mobile .search-input { min-width: 0; flex: 1 1 auto; }
+.ui-mobile .search-input { min-width: 0; flex: 1 1 auto; padding: 6px 10px; font-size: 13px; }
+.ui-mobile .search-bar select { padding: 6px 10px; font-size: 13px; }
 .ui-mobile .flex-between { flex-wrap: wrap; gap: 6px; justify-content: stretch; }
 .ui-mobile .flex-between .btn { flex: 1 1 auto; min-width: 0; text-align: center; }
 .ui-mobile .view-tabs { flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
 .ui-mobile .view-tab { flex: 1 1 auto; text-align: center; min-width: 0; padding: 6px 8px; font-size: 13px; }
 .ui-mobile .toolbar > div[style*="display:flex"] { flex-wrap: wrap; gap: 6px; }
 .ui-mobile .toolbar .btn { flex: 1 1 auto; min-width: 0; text-align: center; font-size: 13px; padding: 8px 10px; }
+
+/* 手机列表行缩小 */
+.ui-mobile .m-row { padding: 8px 10px; min-height: 44px; gap: 8px; }
+.ui-mobile .m-row .m-avatar { width: 32px; height: 32px; font-size: 13px; }
+.ui-mobile .m-row .m-title { font-size: 13px; }
+.ui-mobile .m-row .m-sub { font-size: 11px; }
+.ui-mobile .m-row .m-trail { font-size: 14px; }
 
 /* 手机悬浮主操作 FAB（微信聊天列表「+」） */
 .mobile-fab { display: none; }
