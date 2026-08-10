@@ -409,6 +409,7 @@ a { color: var(--primary-dark); text-decoration: none; }
   align-items: center;
   justify-content: space-between;
   padding: 0 28px;
+  padding-top: env(safe-area-inset-top, 0px);
   flex-shrink: 0;
   overflow: hidden;
 }

@@ -9601,6 +9601,21 @@ async function initApp() {
   await syncS3ConfigFromBackend();
   autoCloudPullOnStart();
 
+  // Safe area fallback: some Android WebViews return 0 for env(safe-area-inset-top)
+  (function applySafeAreaFallback() {
+    var topBar = document.querySelector('.top-bar');
+    if (!topBar) return;
+    var isMobileDevice = /Android|iPhone|iPad|iPod|Mobile|webOS/i.test(navigator.userAgent);
+    var isNarrow = window.innerWidth <= 768;
+    if (isMobileDevice || isNarrow) {
+      var pt = parseFloat(getComputedStyle(topBar).paddingTop) || 0;
+      if (pt < 12) {
+        // env() likely returned 0; apply a fixed fallback
+        topBar.style.setProperty('padding-top', '28px', 'important');
+      }
+    }
+  })();
+
   // Display real-time clock
   updateRealTimeClock();
   window.__clockTimer = setInterval(updateRealTimeClock, 1000);
