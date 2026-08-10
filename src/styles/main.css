@@ -310,18 +310,22 @@ a { color: var(--primary-dark); text-decoration: none; }
 
 /* ===== Sidebar Collapsed (桌面收起态) ===== */
 .sidebar.collapsed {
-  width: 56px !important;
+  width: 28px !important;
   overflow: hidden;
 }
 .sidebar.collapsed .sidebar-title { display: none; }
+.sidebar.collapsed .logo { display: none; }
 .sidebar.collapsed .sidebar-header {
-  padding: 8px 4px;
+  padding: 6px 2px;
   justify-content: center;
 }
 .sidebar.collapsed .sidebar-collapse-btn {
   position: static;
   transform: none;
   margin: 0 auto;
+  width: 20px; height: 20px;
+  font-size: 12px;
+  padding: 0;
 }
 .sidebar.collapsed .sidebar-collapse-btn::after { content: none; }
 .sidebar.collapsed .nav-category-header { display: none; }
@@ -1043,6 +1047,9 @@ a { color: var(--primary-dark); text-decoration: none; }
 .random-result-grid {
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px;
 }
+@media (max-width: 1100px) {
+  .random-result-grid { grid-template-columns: 1fr !important; gap: 10px; }
+}
 .random-column {
   background: var(--bg-card); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
 }
@@ -1087,7 +1094,14 @@ a { color: var(--primary-dark); text-decoration: none; }
 /* ===================== Chat ===================== */
 /* ===================== Chat (Class-Isolated) ===================== */
 .chat-layout { display: flex; height: calc(100vh - 220px); min-height: 400px; background: var(--bg-card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-.chat-sidebar { width: 200px; border-right: 1px solid var(--border); overflow-y: auto; background: var(--bg-secondary); flex-shrink: 0; }
+.chat-sidebar { width: 200px; border-right: 1px solid var(--border); overflow-y: auto; background: var(--bg-secondary); flex-shrink: 0; position: relative; transition: width 0.2s; display: flex; flex-direction: column; }
+.chat-sidebar-toggle {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 36px; border: none; background: var(--bg-hover); color: var(--text-muted); font-size: 14px; cursor: pointer; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.chat-class-list-inner { flex: 1; overflow-y: auto; }
+.chat-sidebar.collapsed { width: 36px !important; }
+.chat-sidebar.collapsed .chat-class-list-inner { display: none; }
+.chat-sidebar.collapsed .chat-sidebar-toggle { border-bottom: none; }
 .chat-class-item {
   padding: 12px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px;
   border-bottom: 1px solid rgba(0,0,0,0.04); transition: background 0.15s;
@@ -1438,12 +1452,20 @@ a { color: var(--primary-dark); text-decoration: none; }
 }
 
 @media (max-width: 900px) {
-  .top-bar { padding: 0 12px; height: 52px; }
+  .top-bar { padding: 0 12px; height: 52px; padding-top: env(safe-area-inset-top, 0px); }
   .top-bar-right { gap: 6px; }
   .page-title { font-size: 15px; }
   .save-btn, .ver-btn, .sync-indicator, .status-btn, .theme-btn { padding: 4px 8px; font-size: 12px; }
   .real-time-clock .clock-time { font-size: 13px; }
 }
+
+@media (max-width: 768px) {
+  .top-bar .status-btn, .top-bar .theme-btn { display: none !important; }
+  .top-bar .top-bar-more-btn { display: flex !important; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--bg-hover); color: var(--text-muted); font-size: 18px; cursor: pointer; }
+  .top-bar-right.expanded .status-btn, .top-bar-right.expanded .theme-btn { display: flex !important; }
+  .top-bar { padding-top: env(safe-area-inset-top, 0px); }
+}
+.top-bar-more-btn { display: none; }
 
 /* ===================== Tablet Responsive ===================== */
 @media (max-width: 1024px) {
@@ -1920,6 +1942,10 @@ a { color: var(--primary-dark); text-decoration: none; }
     width: 100%;
     max-width: 100vw;
   }
+
+  /* 手机模式全局可滚动：纵向内容过多时允许滑动，避免卡死 */
+  body { overflow-y: auto !important; -webkit-overflow-scrolling: touch; }
+  .content-area { overflow-y: auto; -webkit-overflow-scrolling: touch; }
   /* 内容区：纵向滚动，横向禁止溢出 */
   .content-area {
     -webkit-overflow-scrolling: touch;
@@ -1993,7 +2019,7 @@ a { color: var(--primary-dark); text-decoration: none; }
   #pwdStatusBar { display: none; }
   .real-time-clock .clock-time { font-size: 12px; }
 
-  /* Bottom navigation bar */
+  /* Bottom navigation bar — 固定在底部 */
   .mobile-bottom-nav {
     display: flex;
     position: fixed;
@@ -2017,10 +2043,10 @@ a { color: var(--primary-dark); text-decoration: none; }
     border: none;
     background: none;
     cursor: pointer;
-    padding: 4px 0;
+    padding: 3px 0;
     color: var(--text-muted);
-    font-size: 10px;
-    min-width: 56px;
+    font-size: 9px;
+    min-width: 48px;
     transition: color 0.2s;
     -webkit-tap-highlight-color: transparent;
   }
@@ -2028,11 +2054,11 @@ a { color: var(--primary-dark); text-decoration: none; }
     color: var(--primary);
   }
   .mbn-icon {
-    font-size: 22px;
+    font-size: 18px;
     line-height: 1;
   }
   .mbn-label {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 600;
     line-height: 1;
   }
@@ -2264,7 +2290,7 @@ a { color: var(--primary-dark); text-decoration: none; }
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
 /* 手机工具栏吸顶（搜索/筛选常驻可见） */
-.ui-mobile .toolbar { position: sticky; top: 0; z-index: 5; background: var(--bg-page); padding-top: 8px; padding-bottom: 8px; flex-direction: column; align-items: stretch; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.ui-mobile .toolbar { position: relative; z-index: 5; background: var(--bg-page); padding-top: 8px; padding-bottom: 8px; flex-direction: column; align-items: stretch; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
 .ui-mobile .toolbar > * { width: 100%; }
 .ui-mobile .search-bar { flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .ui-mobile .search-input { min-width: 0; flex: 1 1 auto; }
@@ -2280,7 +2306,7 @@ a { color: var(--primary-dark); text-decoration: none; }
 .ui-mobile .mobile-fab.fab-hidden { display: none !important; }
 .ui-mobile .mobile-fab:not(.fab-hidden) {
   display: flex !important; align-items: center; justify-content: center;
-  position: fixed; right: 16px; bottom: calc(72px + var(--safe-bottom) + 14px);
+  position: fixed; right: 16px; bottom: calc(72px + var(--safe-bottom));
   width: 54px; height: 54px; border-radius: 50%; border: none;
   background: var(--primary); color: #fff; font-size: 30px; font-weight: 300; line-height: 1;
   box-shadow: 0 4px 16px rgba(0,0,0,0.28); z-index: 980; cursor: pointer;
@@ -2300,9 +2326,9 @@ a { color: var(--primary-dark); text-decoration: none; }
   .mobile-bottom-nav {
     height: 50px;
   }
-  .mbn-icon { font-size: 18px; }
-  .mbn-label { font-size: 9px; }
-  .mbn-tab { min-width: 40px; padding: 2px 0; }
+  .mbn-icon { font-size: 16px; }
+  .mbn-label { font-size: 8px; }
+  .mbn-tab { min-width: 38px; padding: 2px 0; }
   .main-content {
     padding-bottom: calc(58px + var(--safe-bottom));
   }
@@ -2310,9 +2336,9 @@ a { color: var(--primary-dark); text-decoration: none; }
 
 /* Ultra small phones (≤ 340px) — 4 tabs tight fit */
 @media (max-width: 340px) {
-  .mbn-icon { font-size: 16px; }
-  .mbn-label { font-size: 8px; }
-  .mbn-tab { min-width: 34px; padding: 1px 0; }
+  .mbn-icon { font-size: 14px; }
+  .mbn-label { font-size: 7px; }
+  .mbn-tab { min-width: 32px; padding: 1px 0; }
 }
 
 /* ============================================================
@@ -2392,8 +2418,8 @@ html.ui-mobile .panel { padding: clamp(10px, 3vw, 16px); }
    纯 CSS 覆盖，不改 JS；桌面布局完全不变。
    ============================================================ */
 
-/* 内容区收窄留白，给底部 TabBar 让位 */
-html.ui-mobile .main-content { padding: 10px 10px calc(58px + var(--safe-bottom)); }
+/* 内容区收窄留白 — 底部留出固定导航栏高度 */
+html.ui-mobile .main-content { padding: 10px 10px calc(62px + var(--safe-bottom)); }
 
 /* 统计卡片：手机 3 列网格（5 张→3+2） */
 html.ui-mobile .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -2458,17 +2484,21 @@ html.ui-mobile .chat-sidebar {
   border-right: none; border-bottom: 1px solid var(--border);
   flex-shrink: 0; padding: 6px 8px;
 }
+html.ui-mobile .chat-sidebar-toggle {
+  width: auto; height: auto; padding: 6px 10px; border-radius: 14px; border: 1px solid var(--border); background: var(--bg-hover); border-bottom: none; flex-shrink: 0;
+}
+html.ui-mobile .chat-sidebar.collapsed .chat-class-list-inner { display: none; }
 html.ui-mobile .chat-class-item {
   white-space: nowrap; border-bottom: none; border-right: none;
   border-radius: 14px; padding: 6px 12px; background: var(--bg-secondary);
 }
 html.ui-mobile .chat-class-item.active { background: var(--primary); color: #fff; border-left: none; }
 html.ui-mobile .chat-main { height: auto; min-height: 0; flex: 1; min-width: 0; }
-html.ui-mobile .chat-header { position: sticky; top: 0; z-index: 5; flex-shrink: 0; }
+html.ui-mobile .chat-header { position: relative; z-index: 5; flex-shrink: 0; }
 html.ui-mobile .chat-messages { flex: 1; min-height: 0; }
 html.ui-mobile .chat-templates { flex-shrink: 0; }
 html.ui-mobile .chat-input-area {
-  position: sticky; bottom: 0; z-index: 5; flex-shrink: 0;
+  position: relative; z-index: 5; flex-shrink: 0;
   background: var(--bg-card); padding: 8px 10px;
   padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 }
@@ -2561,7 +2591,7 @@ html.ui-mobile .schedule-table th:first-child,
 html.ui-mobile .schedule-table td:first-child {
   position: sticky; left: 0; z-index: 2; background: var(--bg-card, #fff);
 }
-html.ui-mobile .schedule-table thead th { position: sticky; top: 0; z-index: 3; }
+html.ui-mobile .schedule-table thead th { position: relative; z-index: 3; }
 html.ui-mobile .schedule-table thead th:first-child { z-index: 4; background: var(--primary-lightest, #eef4ff); }
 html.ui-mobile .week-nav-bar { flex-wrap: wrap; gap: 6px; }
 

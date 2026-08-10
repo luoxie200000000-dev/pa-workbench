@@ -2799,6 +2799,11 @@ function updateMobileTabBadges() {
 }
 
 /* ===== 桌面侧栏收起/展开 ===== */
+function toggleTopBarMore() {
+  var tr = document.querySelector('.top-bar-right');
+  if (!tr) return;
+  tr.classList.toggle('expanded');
+}
 function toggleSidebarCollapse() {
   var sb = document.getElementById('sidebar');
   if (!sb) return;
@@ -2808,15 +2813,22 @@ function toggleSidebarCollapse() {
 }
 function updateSidebarCollapseBtn() {
   var btn = document.getElementById('sidebarCollapseBtn');
-  var sb = document.getElementById('sidebar');
-  if (!btn || !sb) return;
-  btn.textContent = sb.classList.contains('collapsed') ? '›' : '‹';
+  if (!btn) return;
+  btn.textContent = '☰';
 }
 function applySidebarCollapse() {
-  var collapsed = false;
-  try { collapsed = localStorage.getItem('sidebarCollapsed') === '1'; } catch(e) {}
   var sb = document.getElementById('sidebar');
-  if (sb && collapsed) sb.classList.add('collapsed');
+  if (!sb) return;
+  var isMobile = document.documentElement.classList.contains('ui-mobile');
+  var w = window.innerWidth;
+  var autoCollapse = !isMobile && w < 1000;
+  var collapsed = false;
+  if (autoCollapse) {
+    collapsed = true;
+  } else {
+    try { collapsed = localStorage.getItem('sidebarCollapsed') === '1'; } catch(e) {}
+  }
+  if (collapsed) sb.classList.add('collapsed'); else sb.classList.remove('collapsed');
   updateSidebarCollapseBtn();
 }
 
@@ -6497,7 +6509,10 @@ function renderChat(container) {
   const cls = state.currentChatClass || getClasses()[0];
   container.innerHTML = `
     <div class="chat-layout">
-      <div class="chat-sidebar" id="chatClassList"></div>
+      <div class="chat-sidebar" id="chatClassList">
+        <button class="chat-sidebar-toggle" data-click="toggleChatSidebar" title="展开/收起班级列表">☰</button>
+        <div class="chat-class-list-inner" id="chatClassListInner"></div>
+      </div>
       <div class="chat-main">
         <div class="chat-header">
           <span>💬 ${escapeHtml(cls)} 课代表沟通</span>
@@ -6526,7 +6541,7 @@ function renderChat(container) {
 }
 
 function renderChatClassList() {
-  const el = document.getElementById('chatClassList');
+  const el = document.getElementById('chatClassListInner');
   if (!el) return;
   const current = state.currentChatClass || getClasses()[0];
   el.innerHTML = getClasses().map(c => {
@@ -6548,6 +6563,12 @@ function switchChatClass(cls) {
   saveState();
   renderChatClassList();
   renderChatMessages();
+}
+
+function toggleChatSidebar() {
+  var sb = document.getElementById('chatClassList');
+  if (!sb) return;
+  sb.classList.toggle('collapsed');
 }
 
 function getClassMessages(cls) {
@@ -9724,6 +9745,13 @@ async function initApp() {
   checkRemindersAndTasks();
   window.__reminderTimer = setInterval(checkRemindersAndTasks, 30000);
 
+  // Auto collapse sidebar on desktop when window is small (debounced)
+  var __sidebarResizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(__sidebarResizeTimer);
+    __sidebarResizeTimer = setTimeout(applySidebarCollapse, 150);
+  });
+
   // First-launch mode picker: if uiMode not initialized, show selection dialog
   var uiModeInitialized = false;
   try { uiModeInitialized = localStorage.getItem('uiModeInitialized') === '1'; } catch(e) {}
@@ -11660,7 +11688,7 @@ var _exportMap = {
   // 学生
   openStudentProfile: openStudentProfile,
   cycleUiMode: cycleUiMode,
-  toggleSidebarCollapse: toggleSidebarCollapse,
+  toggleSidebarCollapse: toggleSidebarCollapse, toggleTopBarMore: toggleTopBarMore,
   toggleNavParent: toggleNavParent,
   openModeSwitcher: openModeSwitcher,
   setUiMode: setUiMode,
@@ -11731,6 +11759,7 @@ var _exportMap = {
   switchChatClass: switchChatClass, sendChat: sendChat,
   sendChatTemplate: sendChatTemplate, sendChatSpecial: sendChatSpecial,
   sendTeacherReply: sendTeacherReply, teacherReply: teacherReply,
+  toggleChatLock: toggleChatLock, toggleChatSidebar: toggleChatSidebar,
   // 提醒
   openReminderModal: openReminderModal, saveReminder: saveReminder,
   deleteReminder: deleteReminder, toggleReminder: toggleReminder,
@@ -11945,7 +11974,7 @@ const __CLICK = {
   openStudentEditor: openStudentEditor,
   openStudentProfile: openStudentProfile,
   cycleUiMode: cycleUiMode,
-  toggleSidebarCollapse: toggleSidebarCollapse,
+  toggleSidebarCollapse: toggleSidebarCollapse, toggleTopBarMore: toggleTopBarMore,
   toggleNavParent: toggleNavParent,
   openModeSwitcher: openModeSwitcher,
   toggleStudentCard: toggleStudentCard, toggleAllStudentCards: toggleAllStudentCards,
@@ -12000,7 +12029,7 @@ const __CLICK = {
   showRuntimeStatus: showRuntimeStatus,
   snoozeAlert: snoozeAlert,
   switchAnalysisView: switchAnalysisView,
-  switchChatClass: switchChatClass,
+  switchChatClass: switchChatClass, toggleChatSidebar: toggleChatSidebar,
   switchLayerMode: switchLayerMode,
   switchScheduleView: switchScheduleView,
   switchStudentTaskView: switchStudentTaskView,
