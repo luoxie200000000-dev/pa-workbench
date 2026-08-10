@@ -33,7 +33,6 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "subsystem": "windows",
       "wix": {
         "language": "zh-CN"
       },
