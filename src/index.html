@@ -90,9 +90,11 @@
   <!-- ===== Main ===== -->
   <main class="main-content" role="main">
     <header class="top-bar">
-      <div class="page-title" id="pageTitle">任务清单</div>
-      <div class="top-bar-right">
+      <div class="top-bar-left">
+        <div class="page-title" id="pageTitle">任务清单</div>
         <div id="pwdStatusBar" style="display:flex;align-items:center;gap:6px"></div>
+      </div>
+      <div class="top-bar-right">
         <button class="undo-btn undo-redo-inline" id="btnUndo" data-click="undoState" disabled title="无可撤销操作" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px;color:var(--text-body);flex-shrink:0">
           <span style="font-size:15px">↶</span><span>撤销</span>
         </button>
