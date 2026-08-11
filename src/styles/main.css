@@ -420,8 +420,8 @@ a { color: var(--primary-dark); text-decoration: none; }
   overflow: hidden;
 }
 .page-title { font-size: 18px; font-weight: 700; color: var(--text-heading); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.top-bar-left { display: flex; align-items: center; gap: 12px; min-width: 0; flex-shrink: 1; flex-wrap: nowrap; }
-.top-bar-right { display: flex; align-items: center; gap: 16px; flex-shrink: 0; flex-wrap: nowrap; overflow: visible; }
+.top-bar-left { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; max-width: 320px; min-width: 0; flex-wrap: nowrap; }
+.top-bar-right { display: flex; align-items: center; gap: 16px; flex: 0 0 auto; flex-shrink: 0; flex-wrap: nowrap; overflow: visible; }
 .date-display { font-size: 13px; color: var(--text-muted); }
 .content-area { flex: 1; overflow-y: auto; padding: 24px 28px; }
 
@@ -1473,12 +1473,9 @@ a { color: var(--primary-dark); text-decoration: none; }
   .real-time-clock .clock-time { font-size: 13px; }
 }
 
-@media (max-width: 768px) {
-  .top-bar .status-btn, .top-bar .theme-btn { display: none !important; }
-  .top-bar .top-bar-more-btn { display: flex !important; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--bg-hover); color: var(--text-muted); font-size: 18px; cursor: pointer; }
-  .top-bar-right.expanded .status-btn, .top-bar-right.expanded .theme-btn { display: flex !important; }
-}
-.top-bar-more-btn { display: none; }
+/* 旧的「展开更多」按钮 .top-bar-more-btn 已被新的 .more-fold 完全替代（状态/数据/主题已永久收进 .more-fold 菜单），
+   此处保留空块声明，避免历史样式再被引入；若日后彻底移除按钮本身，再清理 toggleTopBarMore 与 #topBarMoreBtn */
+.top-bar-more-btn { display: none !important; }
 
 /* ===================== Tablet Responsive ===================== */
 @media (max-width: 1024px) {
@@ -2714,35 +2711,62 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 .more-menu-item:hover { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
 .more-menu-item span:first-child { font-size: 15px; }
 
-/* 顶栏可拖动光标：溢出时由 JS 加 .can-drag，拖动中加 .dragging */
+/* 顶栏可拖动光标：07 顶栏滚动开启时由 JS 加 .can-drag 显示，拖动中加 .dragging */
 .top-bar.can-drag { cursor: grab; }
 .top-bar.can-drag.dragging { cursor: grabbing; }
 .top-bar.dragging { user-select: none; }
 
-/* 顶栏折叠/收纳：统一由永久 !important 规则控制（撤销/重做、状态/数据/主题默认折叠）；
-   顶栏横向滚动容器：统一由 JS 在「07 顶栏滚动开启 + 真实溢出」时加 .top-bar-overflow 控制。
-   下方 .top-bar 规则即唯一来源，已删除原先重复的 @media(max-width:1050px) 与 .ui-mobile 两层，
-   避免日后改一处漏一处。 */
+/* 顶栏折叠/收纳：撤销/重做、状态/数据/主题由永久 !important 规则默认折叠（不依赖类门控） */
 
-/* 顶栏溢出（任意视口宽度均生效，JS 检测 scrollWidth>clientWidth 后加 .top-bar-overflow）：
-   撤销/重做折叠为 ⋮、状态/数据/主题收纳进「更多」、顶栏可横拖——不依赖视口宽度媒体查询，
-   解决手机打开桌面模式时窗口宽度>1050 导致折叠/拖拽失效的问题 */
-.top-bar.top-bar-overflow .top-bar-right {
-  flex: 1 1 auto;
-  min-width: 0;
+/* 顶栏横向滚动容器：仅由 JS 在「07 顶栏滚动开启」时加 .top-bar-overflow——开门即让 .top-bar-right 允许收缩并横向滚动。
+   不检测"是否真实溢出"，因为存在死锁（要求 overflow:visible 的盒子先收缩才能让 scrollWidth>clientWidth 成立） */
+.top-bar.top-bar-overflow {
   overflow-x: auto;
   overflow-y: hidden;
-  flex-wrap: nowrap;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
 }
-.top-bar.top-bar-overflow .top-bar-right::-webkit-scrollbar { height: 4px; }
-.top-bar.top-bar-overflow .top-bar-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-.top-bar.top-bar-overflow .top-bar-right::-webkit-scrollbar-track { background: transparent; }
-.top-bar.top-bar-overflow .top-bar-right > * { flex-shrink: 0; }
-.top-bar.top-bar-overflow .undo-redo-inline { display: none !important; }
-.top-bar.top-bar-overflow .undo-redo-fold { display: inline-flex !important; }
-.top-bar.top-bar-overflow .status-btn[data-click="showRuntimeStatus"],
-.top-bar.top-bar-overflow .status-btn[data-click="openDataManager"],
-.top-bar.top-bar-overflow .theme-btn { display: none !important; }
-.top-bar.top-bar-overflow .more-fold { display: inline-flex !important; }
+.top-bar.top-bar-overflow::-webkit-scrollbar { height: 6px; }
+.top-bar.top-bar-overflow::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.top-bar.top-bar-overflow::-webkit-scrollbar-track { background: transparent; }
+/* 顶栏整体横拖时，left 按内容撑开不收缩（root 已是 flex:0 0 auto），right 同样按内容撑开，避免被 grow 撑满导致 left 被挤。 */
+.top-bar.top-bar-overflow .top-bar-left { flex: 0 0 auto; }
+.top-bar.top-bar-overflow .top-bar-right {
+  flex: 0 0 auto;
+  width: max-content;
+  justify-content: flex-end; /* 内部元素仍靠右排列 */
+  overflow: visible;
+  flex-wrap: nowrap;
+}
+
+/* 云同步设置面板：「自动上传 / 自动下载」两块的折叠控件（仅桌面端，两块并排时易占空间）
+   默认两块展开，点头部按钮收起/展开，状态由 JS 写到 localStorage */
+.sync-section { border-radius: var(--radius-sm); }
+.sync-section-head {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  margin: 0 0 6px 0;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  transition: background-color .15s ease, border-color .15s ease;
+}
+.sync-section-head:hover { background: var(--primary-lightest, #f0f7ff); border-color: var(--primary); }
+.sync-section-head:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.sync-section-arrow {
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  color: var(--primary-darker);
+  font-size: 12px;
+  transition: transform .15s ease;
+}
+.sync-section-title { font-size: 13px; font-weight: 600; color: var(--primary-darker); }
+.sync-section-hint { font-size: 11px; color: var(--text-muted); }
+.sync-section-body { padding: 4px 0 0 0; }
+.sync-section-body[style*="display:none"] { display: none !important; }

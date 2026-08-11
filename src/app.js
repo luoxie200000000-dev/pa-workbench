@@ -540,8 +540,11 @@ var __topBarScrollEnabled = (localStorage.getItem('pa_topbar_scroll') !== 'off')
 
 function enableTopBarDragScroll() {
   var bar = document.querySelector('.top-bar');
-  var scroller = document.querySelector('.top-bar-right');
-  if (!bar || !scroller) return;
+  if (!bar) return;
+  // 07 开启时拖动整条 .top-bar（CSS 把 .top-bar 设为 overflow-x:auto，right 不收缩撑到 max-content）
+  // 07 关闭时 onDown 直接 return，不响应拖动；其余事件始终监听以便快速响应 07 切换
+  if (bar.__topBarDragScrollBound) return; // 幂等：避免重复绑定
+  bar.__topBarDragScrollBound = true;
   var isDown = false, startX = 0, startScroll = 0, moved = false, longPressed = false, longPressTimer = null;
   var THRESHOLD = 6;
   function pageX(e) { return e.touches && e.touches.length ? e.touches[0].pageX : e.pageX; }
@@ -550,14 +553,11 @@ function enableTopBarDragScroll() {
     if (e.button !== undefined && e.button !== 0) return;
     isDown = true; moved = false; longPressed = false;
     startX = pageX(e);
-    startScroll = scroller.scrollLeft;
+    startScroll = bar.scrollLeft;
     clearTimeout(longPressTimer);
     longPressTimer = setTimeout(function() {
-      // 仅当真实溢出才进入拖动态，避免宽屏无溢出时误加 dragging
-      if (scroller.scrollWidth > scroller.clientWidth + 1) {
-        longPressed = true;
-        bar.classList.add('dragging');
-      }
+      longPressed = true;
+      bar.classList.add('dragging');
     }, 450);
   }
   function onMove(e) {
@@ -565,12 +565,11 @@ function enableTopBarDragScroll() {
     if (!isDown) return;
     var dx = pageX(e) - startX;
     if (Math.abs(dx) > THRESHOLD) {
-      if (scroller.scrollWidth <= scroller.clientWidth + 1) return; // 无溢出不进入拖动
       clearTimeout(longPressTimer);
       moved = true;
       bar.classList.add('dragging');
       if (e.cancelable) e.preventDefault();
-      scroller.scrollLeft = startScroll - dx;
+      bar.scrollLeft = startScroll - dx;
     }
   }
   function onUp() {
@@ -578,8 +577,6 @@ function enableTopBarDragScroll() {
     isDown = false;
     clearTimeout(longPressTimer);
     bar.classList.remove('dragging');
-    // 仅在真正拖动过(moved)时吞掉紧随其后的 click，避免误触按钮；
-    // longPressed 但没移动（只是按住没拖）时不要吞点击，否则下次点按钮会失效
     if (moved) {
       var capture = function(ev) {
         ev.stopPropagation();
@@ -599,15 +596,12 @@ function enableTopBarDragScroll() {
   window.addEventListener('resize', updateTopBarDragState);
 }
 
-// 顶栏滚动开关逻辑：开启时整条顶栏可拖动（加 .can-drag + .top-bar-overflow 让右侧可横滚），关闭时还原
+// 顶栏滚动开关逻辑：开启时整条顶栏右侧允许收缩并显示滚动条（加 .can-drag + .top-bar-overflow），关闭时还原
+// 07 开关即"可滑动模式"的唯一门控：开 → 顶栏可拖；关 → 顶栏不可拖。不再依赖"是否真实溢出"，因为顶级约束会死锁（要求 overflow:visible 的盒子先收缩才能让 scrollWidth>clientWidth 成立）
 function updateTopBarDragState() {
   var bar = document.querySelector('.top-bar');
-  var scroller = document.querySelector('.top-bar-right');
-  if (!bar || !scroller) return;
-  // 仅在「07 顶栏滚动开启」且「顶栏右侧真实溢出」时才进入可拖动态：
-  // 否则宽屏/内容未溢出时顶栏会一直显示抓取光标却拖不动，造成误导
-  var overflowing = scroller.scrollWidth > scroller.clientWidth + 1;
-  if (__topBarScrollEnabled && overflowing) {
+  if (!bar) return;
+  if (__topBarScrollEnabled) {
     bar.classList.add('can-drag');
     bar.classList.add('top-bar-overflow');
   } else {
@@ -1611,16 +1605,34 @@ function updateSyncModal() {
       '<button class="btn btn-outline" data-click="manualCloudPull" style="flex:1"' + (configured ? '' : ' disabled') + '>从云端下载</button>' +
       '</div>';
   } else {
-    // 桌面端：两棵树并排
+    // 桌面端：两棵树并排，每块可独立折叠，状态记 localStorage，默认展开
+    var upCollapsed = localStorage.getItem('cloudSyncUploadCollapsed') === '1';
+    var dlCollapsed = localStorage.getItem('cloudSyncDownloadCollapsed') === '1';
+    var upArrow = upCollapsed ? '▶' : '▼';
+    var dlArrow = dlCollapsed ? '▶' : '▼';
+    var upBodyStyle = upCollapsed ? 'display:none' : '';
+    var dlBodyStyle = dlCollapsed ? 'display:none' : '';
     sectionHtml =
       '<div style="font-size:14px;font-weight:700;margin-bottom:10px">云同步设置（上传 / 下载栏目分开选择）</div>' +
-      '<div style="margin-bottom:12px">' +
-      '<div style="font-size:13px;font-weight:600;color:var(--primary-darker);margin-bottom:6px">自动上传栏目（勾选后可展开选班级）</div>' +
+      '<div class="sync-section" data-sync-section="up" style="margin-bottom:12px">' +
+      '<button type="button" class="sync-section-head" data-click="toggleSyncSection" data-click-args="[&quot;up&quot;]" aria-expanded="' + (!upCollapsed) + '">' +
+      '<span class="sync-section-arrow" data-sync-arrow="up">' + upArrow + '</span>' +
+      '<span class="sync-section-title">自动上传栏目</span>' +
+      '<span class="sync-section-hint">（勾选后可展开选班级）</span>' +
+      '</button>' +
+      '<div class="sync-section-body" data-sync-body="up" style="' + upBodyStyle + '">' +
       renderCloudSectionTree('up', state.cloudUploadSections, state.cloudUploadSectionClasses) +
       '</div>' +
-      '<div style="margin-bottom:12px">' +
-      '<div style="font-size:13px;font-weight:600;color:var(--primary-darker);margin-bottom:6px">自动下载栏目（勾选后可展开选班级）</div>' +
+      '</div>' +
+      '<div class="sync-section" data-sync-section="dl" style="margin-bottom:12px">' +
+      '<button type="button" class="sync-section-head" data-click="toggleSyncSection" data-click-args="[&quot;dl&quot;]" aria-expanded="' + (!dlCollapsed) + '">' +
+      '<span class="sync-section-arrow" data-sync-arrow="dl">' + dlArrow + '</span>' +
+      '<span class="sync-section-title">自动下载栏目</span>' +
+      '<span class="sync-section-hint">（勾选后可展开选班级）</span>' +
+      '</button>' +
+      '<div class="sync-section-body" data-sync-body="dl" style="' + dlBodyStyle + '">' +
       renderCloudSectionTree('dl', state.cloudDownloadSections, state.cloudDownloadSectionClasses) +
+      '</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px">' +
       '<button class="btn btn-primary" data-click="manualCloudPush" style="flex:1"' + (configured ? '' : ' disabled') + '>上传到云端</button>' +
@@ -13137,7 +13149,8 @@ const __CLICK = {
   closeMobileSubnav: closeMobileSubnav,
   __dcMbnItem: __dcMbnItem,
   __dcMbnToggleGroup: __dcMbnToggleGroup,
-  __dcSwitchSyncTab: __dcSwitchSyncTab
+  __dcSwitchSyncTab: __dcSwitchSyncTab,
+  toggleSyncSection: toggleSyncSection
 };
 function __dcMbnTab(args, e, el) {
   var gid = args && args[0]; if (!gid) return;
@@ -13165,6 +13178,21 @@ function __dcSwitchSyncTab(args, e, el) {
   var tab = args && args[0]; if (!tab || (tab !== 'up' && tab !== 'dl')) return;
   window._cloudSyncMobileTab = tab;
   updateSyncModal();
+}
+function toggleSyncSection(args, e, el) {
+  // 仅作用于桌面端（手机 tab 模式下没有 .sync-section），传入 'up' | 'dl'
+  var key = args && args[0];
+  if (key !== 'up' && key !== 'dl') return;
+  var storageKey = key === 'up' ? 'cloudSyncUploadCollapsed' : 'cloudSyncDownloadCollapsed';
+  var collapsed = localStorage.getItem(storageKey) === '1';
+  collapsed = !collapsed;
+  localStorage.setItem(storageKey, collapsed ? '1' : '0');
+  var body = document.querySelector('[data-sync-body="' + key + '"]');
+  var arrow = document.querySelector('[data-sync-arrow="' + key + '"]');
+  if (body) body.style.display = collapsed ? 'none' : '';
+  if (arrow) arrow.textContent = collapsed ? '\u25B6' : '\u25BC';
+  if (el) el.setAttribute('aria-expanded', String(!collapsed));
+  if (window.showToast) showToast(collapsed ? (key === 'up' ? '自动上传栏目已收起' : '自动下载栏目已收起') : (key === 'up' ? '自动上传栏目已展开' : '自动下载栏目已展开'));
 }
 function closeMobileSubnav() {
   var overlay = document.getElementById('mobileSubnavOverlay');
