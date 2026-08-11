@@ -8110,6 +8110,7 @@ function renderScoreAnalysis(container) {
               ? `<span class="layer-badge ${prevLayerCSS}" title="上次考试：${escapeAttr(prevScores[0].examName)}（${prevScores[0].score}分）">${prevLayer}层</span>`
               : '<span style="color:var(--text-muted);font-style:italic">未分层</span>';
             return `<tr style="opacity:0.6;background:var(--bg-hover)">
+              <td><input type="checkbox" class="score-del-cb" disabled style="opacity:0.35;cursor:not-allowed"></td>
               <td>${escapeHtml(studentNo)}</td>
               <td>${escapeHtml(s.name)}</td>
               <td>${escapeHtml(s.classId)}</td>
@@ -10000,7 +10001,7 @@ document.addEventListener('DOMContentLoaded', function() {
     } else if (t.classList && t.classList.contains('task-del-cb')) {
       updateTaskSelCount();
     } else if (t.id === 'scoreSelectAll') {
-      document.querySelectorAll('.score-del-cb').forEach(function(cb){ cb.checked = t.checked; });
+      document.querySelectorAll('.score-del-cb').forEach(function(cb){ if (!cb.disabled) cb.checked = t.checked; });
       updateScoreSelCount();
     } else if (t.classList && t.classList.contains('score-del-cb')) {
       updateScoreSelCount();
