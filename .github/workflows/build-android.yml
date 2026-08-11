@@ -34,7 +34,7 @@ jobs:
       - name: Setup Rust targets
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -47,8 +47,8 @@ jobs:
       - name: Init Tauri Android
         run: npx tauri android init
 
-      - name: Build APK (debug signed, sideloadable)
-        run: npx tauri android build --apk --debug
+      - name: Build APK (debug signed, arm64 only)
+        run: npx tauri android build --apk --debug --target aarch64-linux-android
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
