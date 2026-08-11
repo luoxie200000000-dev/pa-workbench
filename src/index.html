@@ -92,12 +92,21 @@
       <div class="page-title" id="pageTitle">任务清单</div>
       <div class="top-bar-right">
         <div id="pwdStatusBar" style="display:flex;align-items:center;gap:6px"></div>
-        <button class="undo-btn" id="btnUndo" data-click="undoState" disabled title="无可撤销操作" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px;color:var(--text-body);flex-shrink:0">
+        <button class="undo-btn undo-redo-inline" id="btnUndo" data-click="undoState" disabled title="无可撤销操作" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px;color:var(--text-body);flex-shrink:0">
           <span style="font-size:15px">↶</span><span>撤销</span>
         </button>
-        <button class="undo-btn" id="btnRedo" data-click="redoState" disabled title="无可重做操作" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px;color:var(--text-body);flex-shrink:0">
+        <button class="undo-btn undo-redo-inline" id="btnRedo" data-click="redoState" disabled title="无可重做操作" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px;color:var(--text-body);flex-shrink:0">
           <span style="font-size:15px">↷</span><span>重做</span>
         </button>
+        <span class="undo-redo-fold-wrap" id="undoRedoFoldWrap">
+          <button class="undo-redo-fold" id="btnUndoRedoFold" data-click="toggleUndoRedoMenu" title="撤销/重做" aria-haspopup="true" aria-expanded="false">
+            <span style="font-size:16px;line-height:1">⋮</span>
+          </button>
+          <div class="undo-redo-menu" id="undoRedoMenu" role="menu" hidden>
+            <button class="undo-redo-menu-item" id="menuItemUndo" data-click="undoState" disabled role="menuitem"><span>↶</span><span>撤销</span></button>
+            <button class="undo-redo-menu-item" id="menuItemRedo" data-click="redoState" disabled role="menuitem"><span>↷</span><span>重做</span></button>
+          </div>
+        </span>
         <button class="save-btn saved" id="saveBtn" data-click="commitSave" title="点击保存数据到本地">
           <span style="font-size:14px">💾</span><span id="saveBtnText">已保存</span>
         </button>

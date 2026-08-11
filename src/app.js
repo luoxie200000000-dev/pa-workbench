@@ -450,6 +450,11 @@ function updateUndoRedoButtons() {
     btnRedo.disabled = !canRedo();
     btnRedo.title = canRedo() ? '重做 (Ctrl+Y，共 ' + state._redoStack.length + '/' + UNDO_LIMIT + ' 步)' : '无可重做操作';
   }
+  // 同步折叠菜单里的撤销/重做项
+  var mUndo = document.getElementById('menuItemUndo');
+  var mRedo = document.getElementById('menuItemRedo');
+  if (mUndo) { mUndo.disabled = !canUndo(); mUndo.title = btnUndo ? btnUndo.title : ''; }
+  if (mRedo) { mRedo.disabled = !canRedo(); mRedo.title = btnRedo ? btnRedo.title : ''; }
 }
 
 function undoState() {
@@ -465,6 +470,7 @@ function undoState() {
   updateUndoRedoButtons();
   // 重渲染当前页
   try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('撤销后渲染失败:', e); }
+  closeUndoRedoMenu();
   showToast('已撤销 (剩余 ' + state._undoStack.length + ' 步)', 'success');
 }
 
@@ -478,7 +484,84 @@ function redoState() {
   saveState();
   updateUndoRedoButtons();
   try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('重做后渲染失败:', e); }
+  closeUndoRedoMenu();
   showToast('已重做', 'success');
+}
+
+function toggleUndoRedoMenu() {
+  var menu = document.getElementById('undoRedoMenu');
+  var btn = document.getElementById('btnUndoRedoFold');
+  if (!menu || !btn) return;
+  if (menu.hasAttribute('hidden')) {
+    menu.removeAttribute('hidden');
+    btn.setAttribute('aria-expanded', 'true');
+  } else {
+    menu.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function closeUndoRedoMenu() {
+  var menu = document.getElementById('undoRedoMenu');
+  var btn = document.getElementById('btnUndoRedoFold');
+  if (menu && !menu.hasAttribute('hidden')) menu.setAttribute('hidden', '');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+// 顶栏融合拖拽滚动：长按兜底 + 移动即时拖，点按钮不受影响
+function enableTopBarDragScroll() {
+  var bar = document.querySelector('.top-bar');
+  var scroller = document.querySelector('.top-bar-right');
+  if (!bar || !scroller) return;
+  var isDown = false, startX = 0, startScroll = 0, moved = false, longPressed = false, longPressTimer = null;
+  var THRESHOLD = 6;
+  function pageX(e) { return e.touches && e.touches.length ? e.touches[0].pageX : e.pageX; }
+  function onDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
+    isDown = true; moved = false; longPressed = false;
+    startX = pageX(e);
+    startScroll = scroller.scrollLeft;
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(function() { longPressed = true; bar.classList.add('dragging'); }, 450);
+  }
+  function onMove(e) {
+    if (!isDown) return;
+    var dx = pageX(e) - startX;
+    if (Math.abs(dx) > THRESHOLD) {
+      clearTimeout(longPressTimer);
+      moved = true;
+      bar.classList.add('dragging');
+      if (e.cancelable) e.preventDefault();
+      scroller.scrollLeft = startScroll - dx;
+    }
+  }
+  function onUp() {
+    if (!isDown) return;
+    isDown = false;
+    clearTimeout(longPressTimer);
+    bar.classList.remove('dragging');
+    if (moved || longPressed) {
+      var capture = function(ev) {
+        ev.stopPropagation();
+        if (ev.cancelable) ev.preventDefault();
+        document.removeEventListener('click', capture, true);
+      };
+      setTimeout(function() { document.addEventListener('click', capture, true); }, 0);
+    }
+  }
+  bar.addEventListener('mousedown', onDown);
+  bar.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
+  bar.addEventListener('touchstart', onDown, { passive: true });
+  bar.addEventListener('touchmove', onMove, { passive: false });
+  bar.addEventListener('touchend', onUp);
+  function updateCursor() {
+    if (scroller.scrollWidth > scroller.clientWidth + 1) bar.classList.add('can-drag');
+    else bar.classList.remove('can-drag');
+  }
+  updateCursor();
+  window.addEventListener('resize', updateCursor);
 }
 
 function _restoreStateFromSnapshot(snap) {
@@ -10591,6 +10674,16 @@ document.addEventListener('DOMContentLoaded', function() {
   if (!state._undoStack) state._undoStack = [];
   if (!state._redoStack) state._redoStack = [];
   setTimeout(updateUndoRedoButtons, 50);
+  // 顶栏融合拖拽滚动（长按兜底 + 移动即时拖）
+  enableTopBarDragScroll();
+  // 点击空白处关闭撤销/重做折叠菜单
+  document.addEventListener('click', function(e) {
+    var menu = document.getElementById('undoRedoMenu');
+    if (!menu || menu.hasAttribute('hidden')) return;
+    var foldBtn = document.getElementById('btnUndoRedoFold');
+    if (foldBtn && (foldBtn.contains(e.target) || menu.contains(e.target))) return;
+    closeUndoRedoMenu();
+  });
   // Mobile sidebar toggle
   document.getElementById('mobileMenuBtn').addEventListener('click', function() {
     document.getElementById('sidebar').classList.toggle('open');
@@ -12773,6 +12866,7 @@ const __CLICK = {
   commitSave: commitSave,
   undoState: undoState,
   redoState: redoState,
+  toggleUndoRedoMenu: toggleUndoRedoMenu,
   confirmImport: confirmImport,
   confirmMerge: confirmMerge,
   confirmResetPassword: confirmResetPassword,
