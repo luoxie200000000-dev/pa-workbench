@@ -1332,7 +1332,11 @@ function renderCloudSectionTree(prefix, selected, sectionClassMap) {
   var scMap = sectionClassMap || {};
   var allClasses = getClasses();
   return CLOUD_SECTIONS.map(function(g) {
-    var collapsed = _cloudCollapsed[g.id] !== false; // 默认折叠，仅显式展开时展开
+    // 默认折叠，但若该分组里有已勾选的 leaf（来自 selected 或默认 DEFAULT），则默认展开——
+    // 避免用户看不到"学生成绩分析/修仙档案"等关键栏目，导致以为没传。
+    var userCollapsed = _cloudCollapsed[g.id];
+    var hasChecked = g.children.some(function(c) { return selSet[c.key]; });
+    var collapsed = userCollapsed !== undefined ? userCollapsed : !hasChecked;
     var itemsHtml = collapsed ? '' : g.children.map(function(c) {
       var cid = 'cloud-' + prefix + '-' + c.key;
       var checked = selSet[c.key] ? ' checked' : '';
@@ -7326,7 +7330,17 @@ function renderDashboard(container) {
     const p = getScoreProgress(s.studentId, exam);
     if (!p) return;
     const stu = state.students.find(st => st.id === s.studentId) || {};
-    const base = { ...s, studentId: s.studentId, studentNo: stu.studentNo || '' };
+    const prevScoreRec = p.prevExam ? state.scores.find(x => x.studentId === s.studentId && x.examName === p.prevExam) : null;
+    const base = {
+      ...s,
+      studentId: s.studentId,
+      studentNo: stu.studentNo || '',
+      progress: p,
+      prevScore: prevScoreRec && prevScoreRec.score,
+      prevClassRank: prevScoreRec && prevScoreRec.classRank,
+      prevGradeRank: prevScoreRec && prevScoreRec.gradeRank,
+      currExam: exam
+    };
     if (p.progressLabel === '明显进步') { progressCounts.up++; keyStudents.push({ ...base, type:'progress_up', label:p.progressLabel, sortType:1 }); }
     else if (p.progressLabel === '小幅进步') { progressCounts.slightUp++; }
     else if (p.progressLabel === '持平') { progressCounts.same++; }
@@ -7481,7 +7495,7 @@ function renderDashboard(container) {
                       <td>${escapeHtml(s.name)}</td>
                       <td>${escapeHtml(s.classId)}</td>
                       <td><strong>${s.score}</strong></td>
-                      <td><span style="color:${color};font-weight:600">${escapeHtml(s.label)}</span></td>
+                      <td><span style="color:${color};font-weight:600;cursor:pointer;text-decoration:underline" data-click="showKeyStudentDetail" data-click-args="[&quot;${s.studentId}&quot;, &quot;${s.type}&quot;]">${escapeHtml(s.label)}</span></td>
                     </tr>`;
                   }).join('')}</tbody>
                 </table>
@@ -7594,6 +7608,97 @@ function showHwAnomalyDetail(studentId, type) {
 // 兼容旧调用：默认显示未上交
 function showIncompleteDetail(studentId) {
   showHwAnomalyDetail(studentId, 'incomplete');
+}
+
+/* ---- 学情看板：成绩变动明细弹窗 ----
+   类型：progress_up / progress_down / layer_up / layer_down
+   数据源：getScoreProgress 已经算完，直接用 prevExam + score 记录回查 */
+function showKeyStudentDetail(studentId, type) {
+  var stu = state.students.find(function(st) { return st.id === studentId; });
+  var name = stu ? stu.name : '';
+  var studentNo = stu ? stu.studentNo : '';
+  var classId = stu ? stu.classId : '';
+  var exam = state._selectedExam || getExamList()[0] || '';
+  var p = getScoreProgress(studentId, exam);
+  if (!p) { showToast('找不到本次成绩变动数据', 'warn'); return; }
+  var prevRec = state.scores.find(function(x) { return x.studentId === studentId && x.examName === p.prevExam; });
+  var currRec = state.scores.find(function(x) { return x.studentId === studentId && x.examName === exam; });
+  var prevAvg = null, currAvg = null;
+  if (p.prevExam) {
+    var prevAll = state.scores.filter(function(x) { return x.examName === p.prevExam; });
+    if (prevAll.length) prevAvg = (prevAll.reduce(function(a, b) { return a + (b.score || 0); }, 0) / prevAll.length);
+  }
+  var currAll = state.scores.filter(function(x) { return x.examName === exam; });
+  if (currAll.length) currAvg = (currAll.reduce(function(a, b) { return a + (b.score || 0); }, 0) / currAll.length);
+
+  // 连续趋势：按级排变化方向数"连续进步/退步次数"
+  var allScores = state.scores
+    .filter(function(s) { return s.studentId === studentId && s.examName; })
+    .slice()
+    .sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
+  var direction = (type === 'progress_up' || type === 'layer_up') ? 1 : -1;
+  var streak = 0;
+  for (var i = allScores.length - 1; i > 0; i--) {
+    var diff = (allScores[i-1].gradeRank || 999) - (allScores[i].gradeRank || 999);
+    if (Math.sign(diff) === direction && diff !== 0) streak++; else break;
+  }
+  var totalExams = allScores.length;
+
+  var typeNames = { progress_up:'明显进步', progress_down:'明显退步', layer_up:'分层提升', layer_down:'分层下滑' };
+  var colorMain = (type === 'progress_up' || type === 'layer_up') ? '#2E7D32' : '#C62828';
+  var sym = (type === 'progress_up' || type === 'layer_up') ? '↑' : '↓';
+  var fmtNum = function(n) { return (n == null || n === 999) ? '<span style="color:var(--text-muted)">—</span>' : n; };
+  var fmtRank = function(n) { return (n == null || n === 999) ? '<span style="color:var(--text-muted)">—</span>' : '第 ' + n + ' 名'; };
+  var fmtDiff = function(n, suffix) {
+    if (n == null || n === 0) return '<span style="color:var(--text-muted)">—</span>';
+    var sign = n > 0 ? '+' : '';
+    var cls = n > 0 ? 'color:#2E7D32' : 'color:#C62828';
+    return '<span style="' + cls + ';font-weight:600">' + sign + n + (suffix||'') + '</span>';
+  };
+  var fmtScoreDiff = function(n) {
+    if (n == null) return '<span style="color:var(--text-muted)">—</span>';
+    var sign = n > 0 ? '+' : '';
+    var cls = n > 0 ? 'color:#2E7D32' : n < 0 ? 'color:#C62828' : 'color:var(--text-muted)';
+    return '<span style="' + cls + ';font-weight:600">' + sign + n + ' 分</span>';
+  };
+
+  var layerChangeCell = '<span style="color:var(--text-muted)">—</span>';
+  if (p.layerChange === 'up') layerChangeCell = '<span style="color:#2E7D32;font-weight:600">↑ 升层</span>';
+  else if (p.layerChange === 'down') layerChangeCell = '<span style="color:#C62828;font-weight:600">↓ 降层</span>';
+
+  var summary = '';
+  if (streak >= 1) summary = '本轮已连续 <strong style="color:' + colorMain + '">' + (streak + 1) + ' 次</strong>' + (direction > 0 ? '进步/升层' : '退步/降层');
+  else summary = '本轮' + (direction > 0 ? '进步/升层' : '退步/降层') + '是新一轮的开始';
+
+  openModal(
+    '<h3>📈 ' + escapeHtml(name) + '（' + escapeHtml(studentNo) + '）' + escapeHtml(typeNames[type] || '成绩变动') + '详情</h3>' +
+    '<div style="margin:8px 0 12px;font-size:13px;color:var(--text-muted)">班级：' + escapeHtml(classId) + ' | 变动：<span style="color:' + colorMain + ';font-weight:600">' + escapeHtml(typeNames[type]) + ' ' + sym + '</span></div>' +
+    '<div class="table-wrap" style="max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:6px">' +
+      '<table class="task-table" style="width:100%">' +
+        '<thead><tr>' +
+          '<th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">维度</th>' +
+          '<th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px;color:var(--text-muted)">上次 · ' + escapeHtml(p.prevExam || '—') + '</th>' +
+          '<th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">本次 · ' + escapeHtml(exam) + '</th>' +
+          '<th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">变化</th>' +
+        '</tr></thead>' +
+        '<tbody>' +
+          '<tr><td style="padding:8px">分数</td><td style="padding:8px;color:var(--text-muted)">' + fmtNum(prevRec && prevRec.score) + '</td><td style="padding:8px"><strong style="font-size:15px">' + fmtNum(currRec && currRec.score) + '</strong></td><td style="padding:8px">' + fmtScoreDiff(p.scoreDiff) + '</td></tr>' +
+          '<tr><td style="padding:8px">班级排名</td><td style="padding:8px;color:var(--text-muted)">' + fmtRank(prevRec && prevRec.classRank) + '</td><td style="padding:8px">' + fmtRank(currRec && currRec.classRank) + '</td><td style="padding:8px">' + fmtDiff(p.classRankDiff, ' 名') + '</td></tr>' +
+          '<tr><td style="padding:8px">级部排名</td><td style="padding:8px;color:var(--text-muted)">' + fmtRank(prevRec && prevRec.gradeRank) + '</td><td style="padding:8px">' + fmtRank(currRec && currRec.gradeRank) + '</td><td style="padding:8px">' + fmtDiff(p.gradeRankDiff, ' 名') + '</td></tr>' +
+          '<tr><td style="padding:8px">分层</td><td style="padding:8px">' + getClassLayerLabel(p.prevLayer) + '</td><td style="padding:8px">' + getClassLayerLabel(p.currLayer) + '</td><td style="padding:8px">' + layerChangeCell + '</td></tr>' +
+          '<tr><td style="padding:8px;color:var(--text-muted)">班级均分</td><td style="padding:8px;color:var(--text-muted)">' + (prevAvg == null ? '—' : prevAvg.toFixed(2)) + '</td><td style="padding:8px">' + (currAvg == null ? '—' : currAvg.toFixed(2)) + '</td><td style="padding:8px;color:var(--text-muted)">背景参考</td></tr>' +
+        '</tbody>' +
+      '</table>' +
+    '</div>' +
+    '<div style="margin-top:12px;padding:12px;background:var(--bg-hover);border-radius:6px;font-size:13px;line-height:1.6">' +
+      '<div style="font-weight:600;margin-bottom:6px;color:var(--text-heading)">📊 趋势概览</div>' +
+      '<div>' + summary + '</div>' +
+      '<div style="margin-top:4px;color:var(--text-muted)">该生历次考试成绩记录共 <strong>' + totalExams + '</strong> 条</div>' +
+    '</div>' +
+    '<div class="modal-actions">' +
+      '<button class="btn btn-outline" data-click="closeModal">关闭</button>' +
+    '</div>'
+  );
 }
 
 function renderHwStatusBars(counts) {
@@ -12091,6 +12196,7 @@ var _exportMap = {
   resetDashboardKeyFilter: resetDashboardKeyFilter,
   showIncompleteDetail: showIncompleteDetail,
   showHwAnomalyDetail: showHwAnomalyDetail,
+  showKeyStudentDetail: showKeyStudentDetail,
   downloadScoreTemplate: downloadScoreTemplate,
   handleScoreUpload: handleScoreUpload,
   openScoreEntryModal: openScoreEntryModal,
@@ -12375,6 +12481,7 @@ const __CLICK = {
   showClassHwStudents: showClassHwStudents,
   showHwAnalysisStudents: showHwAnalysisStudents,
   showHwAnomalyDetail: showHwAnomalyDetail,
+  showKeyStudentDetail: showKeyStudentDetail,
   showRuntimeStatus: showRuntimeStatus,
   snoozeAlert: snoozeAlert,
   switchAnalysisView: switchAnalysisView,
