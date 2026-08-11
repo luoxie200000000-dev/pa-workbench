@@ -7220,11 +7220,13 @@ function renderHwAnalysis(container) {
 
   // 收集各分层各状态的学生名单（用于点击数值时展示）
   const layerStatusStudents = {};
-  const byLayer = { A:{excellent:0,normal:0,incomplete:0,pending:0}, B:{excellent:0,normal:0,incomplete:0,pending:0}, C:{excellent:0,normal:0,incomplete:0,pending:0}, D:{excellent:0,normal:0,incomplete:0,pending:0} };
+  const byLayer = { 'A+':{excellent:0,normal:0,incomplete:0,pending:0}, 'A':{excellent:0,normal:0,incomplete:0,pending:0}, 'B+':{excellent:0,normal:0,incomplete:0,pending:0}, 'B':{excellent:0,normal:0,incomplete:0,pending:0}, 'C+':{excellent:0,normal:0,incomplete:0,pending:0}, 'C':{excellent:0,normal:0,incomplete:0,pending:0} };
   records.forEach(r => {
     const s = state.students.find(st => st.id === r.studentId);
     if (s) {
-      const layer = getStudentLayer(s);
+      // 固定按成绩分数分层（与学情看板口径统一），避免成绩分层模式下 A+/B+/C+ 学生被静默丢弃
+      const ss = state.scores.filter(sc => sc.studentId === s.id && sc.score != null && sc.score !== '').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const layer = ss.length ? scoreToLayer(ss[0].score) : null;
       if (byLayer[layer]) {
         // 统计 incomplete 包含 incomplete + perfunctory
         const statKey = r.status === 'perfunctory' ? 'incomplete' : (byLayer[layer][r.status] !== undefined ? r.status : 'pending');
@@ -7236,7 +7238,7 @@ function renderHwAnalysis(container) {
       }
     }
   });
-  const layerOrder = ['A','B','C','D'];
+  const layerOrder = ['A+','A','B+','B','C+','C'];
   const colors = { excellent:'var(--success)', normal:'var(--info)', incomplete:'var(--danger)', pending:'#BDBDBD' };
 
   // 班级作业完成概况排序
@@ -7273,7 +7275,7 @@ function renderHwAnalysis(container) {
         const total = d.excellent + d.normal + d.incomplete + d.pending;
         return total ? `
           <div style="margin-bottom:18px">
-            <div style="font-weight:600;margin-bottom:8px"><span class="layer-badge ${layer.toLowerCase()}">${layer}层</span> 共 ${total} 条记录</div>
+            <div style="font-weight:600;margin-bottom:8px"><span class="layer-badge ${scoreToLayerCSS(layer)}">${layer}层</span> 共 ${total} 条记录</div>
             ${['excellent','normal','incomplete','pending'].map(status => {
               const count = d[status];
               const pct = Math.round(count/total*100);
@@ -7286,7 +7288,7 @@ function renderHwAnalysis(container) {
               ` : '';
             }).join('')}
           </div>
-        ` : `<div style="margin-bottom:12px"><span class="layer-badge ${layer.toLowerCase()}">${layer}层</span> 暂无记录</div>`;
+        ` : `<div style="margin-bottom:12px"><span class="layer-badge ${scoreToLayerCSS(layer)}">${layer}层</span> 暂无记录</div>`;
       }).join('')}
     </div>
     <div class="analysis-card" style="margin-top:16px">
@@ -7341,10 +7343,14 @@ function showHwAnalysisStudents(layer, status) {
   const students = [];
   records.forEach(r => {
     const s = state.students.find(st => st.id === r.studentId);
-    if (s && getStudentLayer(s) === layer) {
+    if (s) {
+      const ss = state.scores.filter(sc => sc.studentId === s.id && sc.score != null && sc.score !== '').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const stuLayer = ss.length ? scoreToLayer(ss[0].score) : null;
+      if (stuLayer === layer) {
       const statKey = r.status === 'perfunctory' ? 'incomplete' : (['excellent','normal','incomplete','pending'].includes(r.status) ? r.status : 'pending');
       if (statKey === status) {
         students.push({ name: s.name, studentNo: s.studentNo, classId: s.classId, taskTitle: r.taskTitle, status: r.status });
+      }
       }
     }
   });
@@ -7425,8 +7431,8 @@ function renderDashboard(container) {
   }
   if (exam) recalculateRanks(exam);
 
-  const isScoreLayer = state.layerMode === 'score';
-  const layerCounts = isScoreLayer ? { 'A+':0, 'A':0, 'B+':0, 'B':0, 'C+':0, 'C':0 } : { A:0, B:0, C:0, D:0 };
+  const isScoreLayer = true; // 学情看板「各分层人数」固定按成绩分数分层（A+/A/B+/B/C+/C）
+  const layerCounts = { 'A+':0, 'A':0, 'B+':0, 'B':0, 'C+':0, 'C':0 };
   scores.forEach(s => {
     const l = isScoreLayer ? scoreToLayer(s.score) : rankToLayer(s.classRank || 999);
     if (layerCounts[l] !== undefined) layerCounts[l]++;
@@ -7542,9 +7548,9 @@ function renderDashboard(container) {
     </div>
     <div class="stats-row">
       <div class="stat-card"><span class="stat-icon">👥</span><div class="stat-num">${students.length}</div><div class="stat-label">学生数</div></div>
-      <div class="stat-card"><span class="stat-icon">📈</span><div class="stat-num">${progressCounts.up + progressCounts.slightUp}</div><div class="stat-label">进步人数</div></div>
-      <div class="stat-card"><span class="stat-icon">📉</span><div class="stat-num">${progressCounts.down + progressCounts.slightDown}</div><div class="stat-label">退步人数</div></div>
-      <div class="stat-card"><span class="stat-icon">⚠️</span><div class="stat-num">${hwAnomalies.length}</div><div class="stat-label">作业异常</div></div>
+      <div class="stat-card" style="cursor:pointer" data-click="showProgressCategoryStudents" data-click-args="[&quot;progress&quot;]" title="点击查看进步学生名单"><span class="stat-icon">📈</span><div class="stat-num">${progressCounts.up + progressCounts.slightUp}</div><div class="stat-label">进步人数</div></div>
+      <div class="stat-card" style="cursor:pointer" data-click="showProgressCategoryStudents" data-click-args="[&quot;regress&quot;]" title="点击查看退步学生名单"><span class="stat-icon">📉</span><div class="stat-num">${progressCounts.down + progressCounts.slightDown}</div><div class="stat-label">退步人数</div></div>
+      <div class="stat-card" style="cursor:pointer" data-click="showHwAnomalyList" title="点击查看作业异常学生"><span class="stat-icon">⚠️</span><div class="stat-num">${hwAnomalies.length}</div><div class="stat-label">作业异常</div></div>
     </div>
 
     <div class="dashboard-grid" style="margin-top:16px">
@@ -7561,11 +7567,11 @@ function renderDashboard(container) {
     <div class="analysis-card" style="margin-top:16px">
       <h3>📈 进退步人数统计</h3>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
-        ${renderProgressBar('明显进步', progressCounts.up, '#2E7D32')}
-        ${renderProgressBar('小幅进步', progressCounts.slightUp, '#81C784')}
-        ${renderProgressBar('持平', progressCounts.same, '#9E9E9E')}
-        ${renderProgressBar('小幅退步', progressCounts.slightDown, '#FFB74D')}
-        ${renderProgressBar('明显退步', progressCounts.down, '#C62828')}
+        ${renderProgressBar('明显进步', progressCounts.up, '#2E7D32', 'up')}
+        ${renderProgressBar('小幅进步', progressCounts.slightUp, '#81C784', 'slightUp')}
+        ${renderProgressBar('持平', progressCounts.same, '#9E9E9E', 'same')}
+        ${renderProgressBar('小幅退步', progressCounts.slightDown, '#FFB74D', 'slightDown')}
+        ${renderProgressBar('明显退步', progressCounts.down, '#C62828', 'down')}
       </div>
     </div>
 
@@ -7714,6 +7720,38 @@ function showHwAnomalyDetail(studentId, type) {
   `);
 }
 
+// 点击学情看板顶部「作业异常」统计卡，列出所有异常学生（未上交或敷衍完成≥2次）
+function showHwAnomalyList() {
+  const classFilter = state._dashboardClass || '';
+  let students = classFilter ? state.students.filter(s => s.classId === classFilter) : state.students.slice();
+  const list = [];
+  students.forEach(s => {
+    const sRecords = state.homeworkRecords.filter(r => r.studentId === s.id);
+    const incompleteCount = sRecords.filter(r => r.status === 'incomplete').length;
+    const perfunctoryCount = sRecords.filter(r => r.status === 'perfunctory').length;
+    if (incompleteCount >= 2 || perfunctoryCount >= 2) {
+      list.push({ id: s.id, studentNo: s.studentNo, name: s.name, classId: s.classId, incompleteCount, perfunctoryCount });
+    }
+  });
+  list.sort((a, b) => (parseInt((a.studentNo||'').replace(/\D/g,''))||0) - (parseInt((b.studentNo||'').replace(/\D/g,''))||0));
+  const rows = list.map(s => `<tr style="cursor:pointer" data-click="showHwAnomalyDetail" data-click-args="[&quot;${s.id}&quot;, &quot;${s.incompleteCount >= 2 ? 'incomplete' : 'perfunctory'}&quot;]">
+    <td>${escapeHtml(s.studentNo)}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.classId)}</td>
+    <td><span style="color:var(--danger);font-weight:600">未上交 ${s.incompleteCount}</span></td>
+    <td><span style="color:#E65100;font-weight:600">敷衍 ${s.perfunctoryCount}</span></td>
+  </tr>`).join('');
+  openModal(`
+    <h3>⚠️ 作业异常学生（${list.length}人）</h3>
+    <div style="margin-bottom:10px;font-size:13px;color:var(--text-muted)">未上交或敷衍完成累计 ≥2 次，点击某一行可查看具体作业明细</div>
+    <div class="table-wrap" style="max-height:380px;overflow:auto">
+      <table class="task-table" style="width:100%">
+        <thead><tr><th>学号</th><th>姓名</th><th>班级</th><th>未上交</th><th>敷衍</th></tr></thead>
+        <tbody>${list.length > 0 ? rows : '<tr><td colspan="5" class="empty-state">暂无异常学生</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="modal-actions"><button class="btn btn-outline" data-click="closeModal">关闭</button></div>
+  `);
+}
+
 // 兼容旧调用：默认显示未上交
 function showIncompleteDetail(studentId) {
   showHwAnomalyDetail(studentId, 'incomplete');
@@ -7740,12 +7778,22 @@ function showKeyStudentDetail(studentId, type) {
   var currAll = state.scores.filter(function(x) { return x.examName === exam; });
   if (currAll.length) currAvg = (currAll.reduce(function(a, b) { return a + (b.score || 0); }, 0) / currAll.length);
 
+  // 趋势类标签（波动明显/稳步上升/稳居前列）单独展示历次考试明细
+  var trendTypes = ['volatile', 'steady', 'top'];
+  if (trendTypes.indexOf(type) >= 0) {
+    renderTrendDetail(studentId, type, { name: name, studentNo: studentNo, classId: classId }, exam);
+    return;
+  }
+
   // 连续趋势：按级排变化方向数"连续进步/退步次数"
   var allScores = state.scores
     .filter(function(s) { return s.studentId === studentId && s.examName; })
     .slice()
     .sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); });
-  var direction = (type === 'progress_up' || type === 'layer_up') ? 1 : -1;
+  var isUp = ['progress_up','slight_up','layer_up','steady','top'].indexOf(type) >= 0;
+  var isDown = ['progress_down','slight_down','layer_down','regress','volatile'].indexOf(type) >= 0;
+  var isNeutral = ['flat','layer_flat'].indexOf(type) >= 0;
+  var direction = isUp ? 1 : (isDown ? -1 : 0);
   var streak = 0;
   for (var i = allScores.length - 1; i > 0; i--) {
     var diff = (allScores[i-1].gradeRank || 999) - (allScores[i].gradeRank || 999);
@@ -7753,9 +7801,9 @@ function showKeyStudentDetail(studentId, type) {
   }
   var totalExams = allScores.length;
 
-  var typeNames = { progress_up:'明显进步', progress_down:'明显退步', layer_up:'分层提升', layer_down:'分层下滑' };
-  var colorMain = (type === 'progress_up' || type === 'layer_up') ? '#2E7D32' : '#C62828';
-  var sym = (type === 'progress_up' || type === 'layer_up') ? '↑' : '↓';
+  var typeNames = { progress_up:'明显进步', progress_down:'明显退步', slight_up:'小幅进步', slight_down:'小幅退步', flat:'持平', layer_up:'分层提升', layer_down:'分层下滑', layer_flat:'分层持平', regress:'退步明显', volatile:'波动明显', steady:'稳步上升', top:'稳居前列' };
+  var colorMain = isUp ? '#2E7D32' : (isDown ? '#C62828' : 'var(--text-muted)');
+  var sym = isUp ? '↑' : (isDown ? '↓' : '→');
   var fmtNum = function(n) { return (n == null || n === 999) ? '<span style="color:var(--text-muted)">—</span>' : n; };
   var fmtRank = function(n) { return (n == null || n === 999) ? '<span style="color:var(--text-muted)">—</span>' : '第 ' + n + ' 名'; };
   var fmtDiff = function(n, suffix) {
@@ -7771,13 +7819,27 @@ function showKeyStudentDetail(studentId, type) {
     return '<span style="' + cls + ';font-weight:600">' + sign + n + ' 分</span>';
   };
 
+  // 弹窗内的"分层"以成绩分层口径展示（与成绩表一致）
+  var scoreLayerOrder = { 'A+':6, 'A':5, 'B+':4, 'B':3, 'C+':2, 'C':1, '—':0 };
+  var prevScoreLayer = prevRec ? scoreToLayer(prevRec.score) : null;
+  var currScoreLayer = currRec ? scoreToLayer(currRec.score) : null;
+  var popupLayerChange = 'same';
+  if (prevScoreLayer && currScoreLayer) {
+    if (scoreLayerOrder[currScoreLayer] > scoreLayerOrder[prevScoreLayer]) popupLayerChange = 'up';
+    else if (scoreLayerOrder[currScoreLayer] < scoreLayerOrder[prevScoreLayer]) popupLayerChange = 'down';
+  }
   var layerChangeCell = '<span style="color:var(--text-muted)">—</span>';
-  if (p.layerChange === 'up') layerChangeCell = '<span style="color:#2E7D32;font-weight:600">↑ 升层</span>';
-  else if (p.layerChange === 'down') layerChangeCell = '<span style="color:#C62828;font-weight:600">↓ 降层</span>';
+  if (popupLayerChange === 'up') layerChangeCell = '<span style="color:#2E7D32;font-weight:600">↑ 升层</span>';
+  else if (popupLayerChange === 'down') layerChangeCell = '<span style="color:#C62828;font-weight:600">↓ 降层</span>';
 
   var summary = '';
-  if (streak >= 1) summary = '本轮已连续 <strong style="color:' + colorMain + '">' + (streak + 1) + ' 次</strong>' + (direction > 0 ? '进步/升层' : '退步/降层');
-  else summary = '本轮' + (direction > 0 ? '进步/升层' : '退步/降层') + '是新一轮的开始';
+  if (isNeutral) {
+    summary = '本次成绩基本持平，无显著进退步';
+  } else if (streak >= 1) {
+    summary = '本轮已连续 <strong style="color:' + colorMain + '">' + (streak + 1) + ' 次</strong>' + (direction > 0 ? '进步/升层' : '退步/降层');
+  } else {
+    summary = '本轮' + (direction > 0 ? '进步/升层' : '退步/降层') + '是新一轮的开始';
+  }
 
   openModal(
     '<h3>📈 ' + escapeHtml(name) + '（' + escapeHtml(studentNo) + '）' + escapeHtml(typeNames[type] || '成绩变动') + '详情</h3>' +
@@ -7794,7 +7856,7 @@ function showKeyStudentDetail(studentId, type) {
           '<tr><td style="padding:8px">分数</td><td style="padding:8px;color:var(--text-muted)">' + fmtNum(prevRec && prevRec.score) + '</td><td style="padding:8px"><strong style="font-size:15px">' + fmtNum(currRec && currRec.score) + '</strong></td><td style="padding:8px">' + fmtScoreDiff(p.scoreDiff) + '</td></tr>' +
           '<tr><td style="padding:8px">班级排名</td><td style="padding:8px;color:var(--text-muted)">' + fmtRank(prevRec && prevRec.classRank) + '</td><td style="padding:8px">' + fmtRank(currRec && currRec.classRank) + '</td><td style="padding:8px">' + fmtDiff(p.classRankDiff, ' 名') + '</td></tr>' +
           '<tr><td style="padding:8px">级部排名</td><td style="padding:8px;color:var(--text-muted)">' + fmtRank(prevRec && prevRec.gradeRank) + '</td><td style="padding:8px">' + fmtRank(currRec && currRec.gradeRank) + '</td><td style="padding:8px">' + fmtDiff(p.gradeRankDiff, ' 名') + '</td></tr>' +
-          '<tr><td style="padding:8px">分层</td><td style="padding:8px">' + getClassLayerLabel(p.prevLayer) + '</td><td style="padding:8px">' + getClassLayerLabel(p.currLayer) + '</td><td style="padding:8px">' + layerChangeCell + '</td></tr>' +
+          '<tr><td style="padding:8px">分层</td><td style="padding:8px">' + getScoreLayerLabel(prevScoreLayer) + '</td><td style="padding:8px">' + getScoreLayerLabel(currScoreLayer) + '</td><td style="padding:8px">' + layerChangeCell + '</td></tr>' +
           '<tr><td style="padding:8px;color:var(--text-muted)">班级均分</td><td style="padding:8px;color:var(--text-muted)">' + (prevAvg == null ? '—' : prevAvg.toFixed(2)) + '</td><td style="padding:8px">' + (currAvg == null ? '—' : currAvg.toFixed(2)) + '</td><td style="padding:8px;color:var(--text-muted)">背景参考</td></tr>' +
         '</tbody>' +
       '</table>' +
@@ -7813,32 +7875,182 @@ function showKeyStudentDetail(studentId, type) {
 function renderHwStatusBars(counts) {
   const total = Object.values(counts).reduce((a,b)=>a+b,0);
   const items = [
-    { label:'优秀作业', count:counts.excellent, color:'#2E7D32' },
-    { label:'正常完成', count:counts.normal, color:'#1565C0' },
-    { label:'未上交', count:counts.incomplete, color:'#C62828' },
-    { label:'敷衍完成', count:counts.perfunctory, color:'#E65100' },
-    { label:'已补交', count:counts.resubmitted, color:'#6A1B9A' },
-    { label:'待标记', count:counts.pending, color:'#BDBDBD' }
+    { label:'优秀作业', count:counts.excellent, color:'#2E7D32', status:'excellent' },
+    { label:'正常完成', count:counts.normal, color:'#1565C0', status:'normal' },
+    { label:'未上交', count:counts.incomplete, color:'#C62828', status:'incomplete' },
+    { label:'敷衍完成', count:counts.perfunctory, color:'#E65100', status:'perfunctory' },
+    { label:'已补交', count:counts.resubmitted, color:'#6A1B9A', status:'resubmitted' },
+    { label:'待标记', count:counts.pending, color:'#BDBDBD', status:'pending' }
   ];
   return items.map(i => {
     const pct = total ? Math.round(i.count/total*100) : 0;
+    const clickable = i.count > 0
+      ? `style="cursor:pointer" data-click="showHwStatusStudents" data-click-args="[&quot;${i.status}&quot;]" title="点击查看 ${i.label} 学生名单"`
+      : '';
     return `<div class="bar-chart-row">
-      <div class="bar-chart-label"><span>${i.label}</span><span>${i.count}人 (${pct}%)</span></div>
+      <div class="bar-chart-label"><span>${i.label}</span><span ${clickable}>${i.count}人 (${pct}%)</span></div>
       <div class="bar-chart-track"><div class="bar-chart-fill" style="width:${pct}%;background:${i.color}">${pct}%</div></div>
     </div>`;
   }).join('');
+}
+
+// 点击学情看板「作业状态分布」某状态，查看该状态学生名单
+function showHwStatusStudents(status) {
+  const classFilter = state._dashboardClass || '';
+  const statusMap = { excellent:'优秀作业', normal:'正常完成', incomplete:'未上交', perfunctory:'敷衍完成', resubmitted:'已补交', pending:'待标记' };
+  let records = state.homeworkRecords;
+  if (classFilter) records = records.filter(r => r.classId === classFilter);
+  if (status === 'incomplete') {
+    records = records.filter(r => r.status === 'incomplete' || r.status === 'perfunctory');
+  } else {
+    records = records.filter(r => r.status === status);
+  }
+  const seen = new Set();
+  const students = [];
+  records.forEach(r => {
+    if (seen.has(r.studentId)) return;
+    seen.add(r.studentId);
+    const s = state.students.find(st => st.id === r.studentId);
+    students.push({
+      studentNo: s ? s.studentNo : (r.studentNo || '-'),
+      name: s ? s.name : (r.name || '-'),
+      classId: r.classId || (s ? s.classId : '-')
+    });
+  });
+  students.sort((a, b) => (parseInt((a.studentNo||'').replace(/\D/g,''))||0) - (parseInt((b.studentNo||'').replace(/\D/g,''))||0));
+  const rows = students.map(st => `<tr><td>${escapeHtml(st.studentNo)}</td><td>${escapeHtml(st.name)}</td><td>${escapeHtml(st.classId)}</td></tr>`).join('');
+  openModal(`
+    <h3>📋 ${statusMap[status] || status}（${students.length}人）</h3>
+    <div class="table-wrap" style="max-height:400px;overflow:auto">
+      <table class="task-table" style="width:100%">
+        <thead><tr><th>学号</th><th>姓名</th><th>班级</th></tr></thead>
+        <tbody>${students.length > 0 ? rows : '<tr><td colspan="3" class="empty-state">暂无学生</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-click="closeModal">关闭</button>
+    </div>
+  `);
+}
+
+// 点击学情看板「进退步人数统计」某档位，查看该档位学生名单
+function showProgressCategoryStudents(cat) {
+  const exam = state._selectedExam || getExamList()[0] || '';
+  const classFilter = state._dashboardClass || '';
+  let scores = exam ? state.scores.filter(s => s.examName === exam) : state.scores.slice();
+  if (classFilter) scores = scores.filter(s => s.classId === classFilter);
+  const matched = [];
+  scores.forEach(s => {
+    const p = getScoreProgress(s.studentId, exam);
+    if (!p) return;
+    let c;
+    if (p.gradeRankDiff >= 10) c = 'up';
+    else if (p.gradeRankDiff >= 3) c = 'slightUp';
+    else if (p.gradeRankDiff <= -10) c = 'down';
+    else if (p.gradeRankDiff <= -3) c = 'slightDown';
+    else c = 'same';
+    const want = cat === 'progress' ? ['up','slightUp'] : cat === 'regress' ? ['down','slightDown'] : [cat];
+    if (want.includes(c)) {
+      const stu = state.students.find(x => x.id === s.studentId);
+      matched.push({
+        studentNo: stu ? stu.studentNo : (s.studentNo || '-'),
+        name: stu ? stu.name : (s.name || '-'),
+        classId: s.classId, score: s.score, classRank: s.classRank, gradeRank: s.gradeRank, diff: p.gradeRankDiff
+      });
+    }
+  });
+  matched.sort((a, b) => (parseInt((a.studentNo||'').replace(/\D/g,''))||0) - (parseInt((b.studentNo||'').replace(/\D/g,''))||0));
+  const labelMap = { up:'明显进步', slightUp:'小幅进步', same:'持平', slightDown:'小幅退步', down:'明显退步', progress:'进步（含小幅）', regress:'退步（含小幅）' };
+  const rows = matched.map(m => `<tr><td>${escapeHtml(m.studentNo)}</td><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.classId)}</td><td><strong>${m.score}</strong></td><td>${m.classRank||'-'}</td><td>${m.gradeRank||'-'}</td><td>${m.diff>=0?'+':''}${m.diff}</td></tr>`).join('');
+  openModal(`
+    <h3>📈 ${labelMap[cat] || cat}（${matched.length}人）· ${escapeHtml(exam)}</h3>
+    <div class="table-wrap" style="max-height:400px;overflow:auto">
+      <table class="task-table" style="width:100%">
+        <thead><tr><th>学号</th><th>姓名</th><th>班级</th><th>成绩</th><th>班排</th><th>级排</th><th>级排变化</th></tr></thead>
+        <tbody>${matched.length > 0 ? rows : '<tr><td colspan="7" class="empty-state">暂无学生</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="modal-actions"><button class="btn btn-outline" data-click="closeModal">关闭</button></div>
+  `);
+}
+
+// 点击学情看板「各分层人数」某层，查看该层学生名单
+function showLayerStudents(layer) {
+  const exam = state._selectedExam || getExamList()[0] || '';
+  const classFilter = state._dashboardClass || '';
+  let scores = exam ? state.scores.filter(s => s.examName === exam) : state.scores.slice();
+  if (classFilter) scores = scores.filter(s => s.classId === classFilter);
+  const matched = scores.filter(s => scoreToLayer(s.score) === layer);
+  const title = getScoreLayerLabel(layer) || layer;
+  const rows = matched.sort((a, b) => (b.score || 0) - (a.score || 0)).map(s => {
+    const stu = state.students.find(x => x.id === s.studentId);
+    return `<tr><td>${escapeHtml(stu ? stu.studentNo : (s.studentNo || '-'))}</td><td>${escapeHtml(stu ? stu.name : (s.name || '-'))}</td><td>${escapeHtml(s.classId || '-')}</td><td><strong>${s.score}</strong></td><td>${s.classRank || '-'}</td><td>${s.gradeRank || '-'}</td></tr>`;
+  }).join('');
+  openModal(`
+    <h3>🎯 ${escapeHtml(title)} · ${escapeHtml(exam)}（${matched.length}人）</h3>
+    <div class="table-wrap" style="max-height:400px;overflow:auto">
+      <table class="task-table" style="width:100%">
+        <thead><tr><th>学号</th><th>姓名</th><th>班级</th><th>成绩</th><th>班排</th><th>级排</th></tr></thead>
+        <tbody>${matched.length > 0 ? rows : '<tr><td colspan="6" class="empty-state">暂无学生</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="modal-actions"><button class="btn btn-outline" data-click="closeModal">关闭</button></div>
+  `);
+}
+
+// 趋势类标签（波动明显/稳步上升/稳居前列）弹窗：列出该生历次考试明细
+function renderTrendDetail(studentId, type, stu, exam) {
+  const trend = getStudentRankTrendUpTo(studentId, 'gradeRank', exam);
+  const scores = trend.scores || [];
+  if (scores.length === 0) { showToast('该生暂无考试记录', 'warn'); return; }
+  const rows = scores.map(s => {
+    const layer = scoreToLayer(s.score);
+    return `<tr><td>${escapeHtml(s.examName)}</td><td>${s.score != null ? s.score : '-'}</td><td>${s.classRank || '-'}</td><td>${s.gradeRank || '-'}</td><td><span class="layer-badge ${scoreToLayerCSS(layer)}">${layer}层</span></td></tr>`;
+  }).join('');
+  let summary = '';
+  const ranks = scores.map(s => s.gradeRank).filter(r => r > 0);
+  if (type === 'volatile') {
+    if (ranks.length >= 3) {
+      const range = Math.max(...ranks) - Math.min(...ranks);
+      const avg = ranks.reduce((a, b) => a + b, 0) / ranks.length;
+      const variance = ranks.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / ranks.length;
+      const std = Math.sqrt(variance);
+      summary = `级排波动范围 <strong>${range}</strong>，标准差 <strong>${std.toFixed(1)}</strong>（共 ${ranks.length} 次有效记录）`;
+    } else {
+      summary = '有效记录不足 3 次，无法计算波动';
+    }
+  } else if (type === 'steady') {
+    const firstRank = scores[0].gradeRank, lastRank = scores[scores.length - 1].gradeRank;
+    summary = `级排 ${firstRank} → ${lastRank}，累计提升 <strong>${firstRank - lastRank}</strong> 名（共 ${scores.length} 次）`;
+  } else if (type === 'top') {
+    const avgRank = ranks.reduce((a, b) => a + b, 0) / ranks.length;
+    summary = `平均级排 <strong>${avgRank.toFixed(1)}</strong>（共 ${scores.length} 次，其中 ${ranks.length} 次有效）`;
+  }
+  const typeNames = { volatile:'波动明显', steady:'稳步上升', top:'稳居前列' };
+  openModal(`
+    <h3>📊 ${escapeHtml(stu.name || '')}（${escapeHtml(stu.studentNo || '')}）· ${typeNames[type] || '趋势'}详情</h3>
+    <div style="margin:8px 0 12px;font-size:13px;color:var(--text-muted)">班级：${escapeHtml(stu.classId || '')} | 截至考试：${escapeHtml(exam)}</div>
+    <div class="table-wrap" style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:6px">
+      <table class="task-table" style="width:100%">
+        <thead><tr><th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">考试</th><th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">成绩</th><th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">班排</th><th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">级排</th><th style="background:var(--bg-hover);text-align:left;font-size:12px;padding:8px">分层</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;padding:12px;background:var(--bg-hover);border-radius:6px;font-size:13px;line-height:1.6">${summary}</div>
+    <div class="modal-actions"><button class="btn btn-outline" data-click="closeModal">关闭</button></div>
+  `);
 }
 
 function renderLayerBars(counts, isScoreMode) {
   const total = Object.values(counts).reduce((a,b)=>a+b,0);
   const items = isScoreMode
     ? [
-        { label:'A+层(83-100分)', count:counts['A+'], color:'#1B5E20' },
-        { label:'A层(76-82分)', count:counts['A'], color:'#2E7D32' },
-        { label:'B+层(59-75分)', count:counts['B+'], color:'var(--info)' },
-        { label:'B层(45-58分)', count:counts['B'], color:'#E65100' },
-        { label:'C+层(30-44分)', count:counts['C+'], color:'var(--warning)' },
-        { label:'C层(<30分)', count:counts['C'], color:'var(--danger)' }
+        { label:'A+层(83-100分)', count:counts['A+'], color:'#1B5E20', layer:'A+' },
+        { label:'A层(76-82分)', count:counts['A'], color:'#2E7D32', layer:'A' },
+        { label:'B+层(59-75分)', count:counts['B+'], color:'var(--info)', layer:'B+' },
+        { label:'B层(45-58分)', count:counts['B'], color:'#E65100', layer:'B' },
+        { label:'C+层(30-44分)', count:counts['C+'], color:'var(--warning)', layer:'C+' },
+        { label:'C层(<30分)', count:counts['C'], color:'var(--danger)', layer:'C' }
       ]
     : [
         { label:'A层(1-15名)', count:counts.A, color:'var(--success)' },
@@ -7848,16 +8060,20 @@ function renderLayerBars(counts, isScoreMode) {
       ];
   return items.map(i => {
     const pct = total ? Math.round(i.count/total*100) : 0;
+    const clickable = (isScoreMode && i.layer && i.count > 0)
+      ? `style="cursor:pointer" data-click="showLayerStudents" data-click-args="[&quot;${i.layer}&quot;]" title="点击查看 ${i.label} 学生名单"`
+      : '';
     return `<div class="bar-chart-row">
-      <div class="bar-chart-label"><span>${i.label}</span><span>${i.count}人 (${pct}%)</span></div>
+      <div class="bar-chart-label"><span>${i.label}</span><span ${clickable}>${i.count}人 (${pct}%)</span></div>
       <div class="bar-chart-track"><div class="bar-chart-fill" style="width:${pct}%;background:${i.color}">${pct}%</div></div>
     </div>`;
   }).join('');
 }
 
-function renderProgressBar(label, count, color) {
+function renderProgressBar(label, count, color, cat) {
+  const clickable = cat ? `style="cursor:pointer" data-click="showProgressCategoryStudents" data-click-args="[&quot;${cat}&quot;]" title="点击查看 ${label} 学生名单"` : '';
   return `<div style="text-align:center;min-width:100px">
-    <div style="font-size:24px;font-weight:700;color:${color}">${count}</div>
+    <div style="font-size:24px;font-weight:700;color:${color}" ${clickable}>${count}</div>
     <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${label}</div>
   </div>`;
 }
@@ -8367,7 +8583,7 @@ function renderScoreAnalysis(container) {
                   <span class="dashboard-item-name">${escapeHtml(item.name)}</span>
                   <span class="dashboard-item-info">${escapeHtml(item.classId)} · ${item.info}</span>
                 </div>
-                <span class="dashboard-badge" style="background:${item.color}20;color:${item.color}">${item.label}</span>
+                <span class="dashboard-badge" style="background:${item.color}20;color:${item.color};cursor:pointer" data-click="showKeyStudentDetail" data-click-args="[&quot;${item.studentId}&quot;, &quot;${item.type}&quot;]" title="点击查看详情">${item.label}</span>
               </div>
             `).join('')}
           </div>
@@ -8389,7 +8605,7 @@ function renderScoreAnalysis(container) {
                   <span class="dashboard-item-name">${escapeHtml(item.name)}</span>
                   <span class="dashboard-item-info">${escapeHtml(item.classId)} · ${item.info}</span>
                 </div>
-                <span class="dashboard-badge" style="background:${item.color}20;color:${item.color}">${item.label}</span>
+                <span class="dashboard-badge" style="background:${item.color}20;color:${item.color};cursor:pointer" data-click="showKeyStudentDetail" data-click-args="[&quot;${item.studentId}&quot;, &quot;${item.type}&quot;]" title="点击查看详情">${item.label}</span>
               </div>
             `).join('')}
           </div>
@@ -8451,13 +8667,22 @@ function renderScoreAnalysis(container) {
           const layer = scoreToLayer(s.score);
           const layerCSS = scoreToLayerCSS(layer);
           const progress = getScoreProgress(s.studentId, selectedExam) || {};
+          const layerType = progress.layerChange === 'up' ? 'layer_up' : progress.layerChange === 'down' ? 'layer_down' : 'layer_flat';
+          const layerDataClick = `data-click="showKeyStudentDetail" data-click-args="[&quot;${s.studentId}&quot;, &quot;${layerType}&quot;]"`;
           const layerChangeBadge = progress.layerChange === 'up'
-            ? '<span style="background:#C8E6C9;color:#1B5E20;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">↑ 分层提升</span>'
+            ? `<span style="background:#C8E6C9;color:#1B5E20;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer" ${layerDataClick} title="点击查看分层变动详情">↑ 分层提升</span>`
             : progress.layerChange === 'down'
-            ? '<span style="background:#FFCDD2;color:#B71C1C;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">↓ 分层下滑</span>'
-            : '<span style="background:#E0E0E0;color:#616161;padding:2px 8px;border-radius:10px;font-size:11px">→ 持平</span>';
+            ? `<span style="background:#FFCDD2;color:#B71C1C;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer" ${layerDataClick} title="点击查看分层变动详情">↓ 分层下滑</span>`
+            : `<span style="background:#E0E0E0;color:#616161;padding:2px 8px;border-radius:10px;font-size:11px;cursor:pointer" ${layerDataClick} title="点击查看分层变动详情">→ 持平</span>`;
+          let progType = null;
+          if (progress.progressLabel === '明显进步') progType = 'progress_up';
+          else if (progress.progressLabel === '小幅进步') progType = 'slight_up';
+          else if (progress.progressLabel === '持平') progType = 'flat';
+          else if (progress.progressLabel === '小幅退步') progType = 'slight_down';
+          else if (progress.progressLabel === '明显退步') progType = 'progress_down';
+          const progDataClick = progType ? `data-click="showKeyStudentDetail" data-click-args="[&quot;${s.studentId}&quot;, &quot;${progType}&quot;]"` : '';
           const progressBadge = progress.progressLabel
-            ? `<span style="background:${progress.progressColor}20;color:${progress.progressColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">${progress.progressLabel}</span>`
+            ? `<span style="background:${progress.progressColor}20;color:${progress.progressColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;cursor:pointer" ${progDataClick} title="点击查看进退步详情">${progress.progressLabel}</span>`
             : '<span class="text-muted text-sm">首次</span>';
           return `<tr>
             <td><input type="checkbox" class="score-del-cb" data-sid="${escapeAttr(s.id)}"></td>
@@ -8551,7 +8776,7 @@ function getScoreDashboardData(selectedExam, classFilter) {
     // 退步明显：选中考试 vs 前一次，级排下滑 ≥ 8
     if (cmp && cmp.diff <= -8 && !processed.has(s.id + '-regress')) {
       concern.push({
-        studentId: s.id, name: s.name, classId: s.classId,
+        studentId: s.id, name: s.name, classId: s.classId, type: 'regress',
         label: cmp.label, color: cmp.color,
         info: `级排 ${cmp.prevRank} → ${cmp.currRank}（vs ${cmp.prevExam}）`
       });
@@ -8568,7 +8793,7 @@ function getScoreDashboardData(selectedExam, classFilter) {
         const range = Math.max(...ranks) - Math.min(...ranks);
         if ((range >= 20 || std >= 8) && !processed.has(s.id + '-volatile')) {
           concern.push({
-            studentId: s.id, name: s.name, classId: s.classId,
+            studentId: s.id, name: s.name, classId: s.classId, type: 'volatile',
             label: '波动明显', color: '#EF6C00',
             info: `级排波动范围 ${range}，标准差 ${std.toFixed(1)}`
           });
@@ -8588,7 +8813,7 @@ function getScoreDashboardData(selectedExam, classFilter) {
       const improveRatio = improveCount / (trend.data.length - 1);
       if ((improveRatio >= 0.6 && (firstRank - lastRank) >= 3) && !processed.has(s.id + '-steady')) {
         praise.push({
-          studentId: s.id, name: s.name, classId: s.classId,
+          studentId: s.id, name: s.name, classId: s.classId, type: 'steady',
           label: '稳步上升', color: '#1B5E20',
           info: `级排 ${firstRank} → ${lastRank}`
         });
@@ -8603,7 +8828,7 @@ function getScoreDashboardData(selectedExam, classFilter) {
         const avgRank = ranks.reduce((a,b)=>a+b,0) / ranks.length;
         if (avgRank <= 20 && !processed.has(s.id + '-top')) {
           praise.push({
-            studentId: s.id, name: s.name, classId: s.classId,
+            studentId: s.id, name: s.name, classId: s.classId, type: 'top',
             label: '稳居前列', color: '#1565C0',
             info: `平均级排 ${avgRank.toFixed(1)}`
           });
@@ -8615,7 +8840,7 @@ function getScoreDashboardData(selectedExam, classFilter) {
     // 进步明显：选中考试 vs 前一次，级排提升 ≥ 8
     if (cmp && cmp.diff >= 8 && !processed.has(s.id + '-progress')) {
       praise.push({
-        studentId: s.id, name: s.name, classId: s.classId,
+        studentId: s.id, name: s.name, classId: s.classId, type: 'progress_up',
         label: cmp.label, color: cmp.color,
         info: `级排 ${cmp.prevRank} → ${cmp.currRank}（vs ${cmp.prevExam}）`
       });
@@ -12366,6 +12591,10 @@ var _exportMap = {
   showIncompleteDetail: showIncompleteDetail,
   showHwAnomalyDetail: showHwAnomalyDetail,
   showKeyStudentDetail: showKeyStudentDetail,
+  showHwStatusStudents: showHwStatusStudents,
+  showProgressCategoryStudents: showProgressCategoryStudents,
+  showLayerStudents: showLayerStudents,
+  showHwAnomalyList: showHwAnomalyList,
   downloadScoreTemplate: downloadScoreTemplate,
   handleScoreUpload: handleScoreUpload,
   openScoreEntryModal: openScoreEntryModal,
@@ -12651,6 +12880,10 @@ const __CLICK = {
   showHwAnalysisStudents: showHwAnalysisStudents,
   showHwAnomalyDetail: showHwAnomalyDetail,
   showKeyStudentDetail: showKeyStudentDetail,
+  showHwStatusStudents: showHwStatusStudents,
+  showProgressCategoryStudents: showProgressCategoryStudents,
+  showLayerStudents: showLayerStudents,
+  showHwAnomalyList: showHwAnomalyList,
   showRuntimeStatus: showRuntimeStatus,
   snoozeAlert: snoozeAlert,
   switchAnalysisView: switchAnalysisView,
