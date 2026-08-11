@@ -518,7 +518,6 @@ function enableTopBarDragScroll() {
   function pageX(e) { return e.touches && e.touches.length ? e.touches[0].pageX : e.pageX; }
   function onDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
-    if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
     isDown = true; moved = false; longPressed = false;
     startX = pageX(e);
     startScroll = scroller.scrollLeft;

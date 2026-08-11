@@ -2668,6 +2668,8 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 /* ≤1050px：顶栏右侧按钮过多时支持横向滚动 + 撤销/重做折叠 */
 @media (max-width: 1050px) {
   .top-bar-right {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow-x: auto;
     overflow-y: hidden;
     flex-wrap: nowrap;
