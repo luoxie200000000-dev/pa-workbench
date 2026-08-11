@@ -25,6 +25,7 @@ tauri-build.log
 cargo-check-output.txt
 target-check/
 target-verify/
+build.log
 
 # Installers / archives (built separately)
 *.exe
