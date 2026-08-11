@@ -1209,6 +1209,11 @@ function cloudGetCheckedSections(prefix) {
     var el = document.getElementById('cloud-' + prefix + '-' + k);
     if (el && el.checked) out.push(k);
   });
+  // 分组折叠时勾选框不渲染，回退到已持久化的选择，避免误报“未选择”
+  if (out.length === 0) {
+    var saved = prefix === 'up' ? state.cloudUploadSections : state.cloudDownloadSections;
+    if (Array.isArray(saved) && saved.length) out = saved.slice();
+  }
   return out;
 }
 
@@ -1218,6 +1223,11 @@ function cloudGetSectionClassesFromDOM(prefix, secKey) {
     var el = document.getElementById('cloud-' + prefix + '-cls-' + secKey + '-' + cl);
     if (el && el.checked) out.push(cl);
   });
+  // 班级勾选框在折叠分组中同样不渲染，回退到已保存的班级选择
+  if (out.length === 0) {
+    var map = prefix === 'up' ? state.cloudUploadSectionClasses : state.cloudDownloadSectionClasses;
+    if (map && Array.isArray(map[secKey]) && map[secKey].length) out = map[secKey].slice();
+  }
   return out;
 }
 
