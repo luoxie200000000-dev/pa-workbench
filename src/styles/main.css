@@ -990,6 +990,8 @@ a { color: var(--primary-dark); text-decoration: none; }
 .student-card-item.layer-b { border-left-color: var(--info); }
 .student-card-item.layer-c { border-left-color: var(--warning); }
 .student-card-item.layer-d { border-left-color: var(--danger); }
+.student-card-check { position: absolute; top: 10px; right: 12px; z-index: 3; cursor: pointer; }
+.student-card-check input { width: 16px; height: 16px; cursor: pointer; accent-color: var(--danger); }
 .student-card-name { font-size: 15px; font-weight: 700; color: var(--text-heading); }
 .student-card-info { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .student-card-tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }

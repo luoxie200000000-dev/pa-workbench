@@ -1275,6 +1275,34 @@ function renderCloudSectionTree(prefix, selected, sectionClassMap) {
   }).join('');
 }
 
+// 旧数据迁移：成绩记录的 studentId 曾被误存为学号，重新关联回学生内部 id
+function migrateScoreStudentIds() {
+  if (!Array.isArray(state.scores) || !Array.isArray(state.students)) return;
+  const byNo = {};
+  state.students.forEach(function(s) { if (s.studentNo) byNo[s.studentNo] = s.id; });
+  const validIds = {};
+  state.students.forEach(function(s) { validIds[s.id] = true; });
+  let fixed = 0, orphan = 0;
+  state.scores.forEach(function(sc) {
+    if (!sc || !sc.studentId) { orphan++; return; }
+    if (validIds[sc.studentId]) return; // 已是有效内部 id
+    // studentId 实为学号，尝试匹配
+    if (byNo[sc.studentId]) {
+      sc.studentId = byNo[sc.studentId];
+      fixed++;
+      return;
+    }
+    // 退而求其次：按 姓名+班级 匹配
+    const byName = state.students.find(function(s) { return s.name === sc.name && s.classId === sc.classId; });
+    if (byName) { sc.studentId = byName.id; fixed++; }
+    else orphan++;
+  });
+  if (fixed > 0) { saveState(); }
+  if (fixed > 0 || orphan > 0) {
+    console.log('[migrateScoreStudentIds] 修正 ' + fixed + ' 条，残留孤立 ' + orphan + ' 条');
+  }
+}
+
 function migrateCloudSyncState() {
   if (state.cloudSyncClass) {
     var old = state.cloudSyncClass;
@@ -3346,10 +3374,18 @@ function renderTaskList(container) {
           + '<div class="m-title">' + escapeHtml(t.name) + (t.important?' <span class="tag tag-important">重要</span>':'') + (t.urgent?' <span class="tag tag-urgent">紧急</span>':'') + '</div>'
           + '<div class="m-sub">' + fmtDateTime(t.time) + (t.resp?' · '+escapeHtml(t.resp):'') + '</div>'
         + '</div>'
+        + '<input type="checkbox" class="task-del-cb" data-tid="' + t.id + '" style="margin-left:8px">'
         + '<span class="m-trail">›</span>'
       + '</div>';
     }).join('');
-    container.innerHTML = '<div class="m-list">' + mrows + '</div>';
+    container.innerHTML = `
+      <div class="flex-between gap-8" style="margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none">
+          <input type="checkbox" id="taskSelectAll"> 全选
+        </label>
+        <button class="btn btn-danger" id="taskBatchDeleteBtn" data-click="batchDeleteTasks" disabled style="font-size:12px;padding:4px 12px">🗑️ 批量删除 (<span id="taskSelCount">0</span>)</button>
+      </div>
+      <div class="m-list">${mrows}</div>`;
     return;
   }
   let rows = tasks.map(t => `
@@ -3363,11 +3399,18 @@ function renderTaskList(container) {
       <td>${t.important?'<span class="tag tag-important">重要</span>':'<span class="tag tag-normal">一般</span>'}</td>
       <td>${t.urgent?'<span class="tag tag-urgent">紧急</span>':'<span class="tag tag-normal">常规</span>'}</td>
       <td style="white-space:nowrap">
+        <input type="checkbox" class="task-del-cb" data-tid="${t.id}" style="margin-right:6px;vertical-align:middle" title="批量删除选择">
         <button class="btn-icon" title="编辑" data-click="openTaskModal" data-click-args="[&quot;${t.id}&quot;]">✏️</button>
         <button class="btn-icon" title="删除" data-click="deleteTask" data-click-args="[&quot;${t.id}&quot;]">🗑️</button>
       </td>
     </tr>`).join('');
   container.innerHTML = `
+    <div class="flex-between gap-8" style="margin-bottom:8px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="taskSelectAll"> 全选
+      </label>
+      <button class="btn btn-danger" id="taskBatchDeleteBtn" data-click="batchDeleteTasks" disabled style="font-size:12px;padding:4px 12px">🗑️ 批量删除 (<span id="taskSelCount">0</span>)</button>
+    </div>
     <table class="task-table">
       <thead><tr>
         <th></th><th>任务名称 / 描述</th><th>时间</th><th>负责人</th><th>重要</th><th>紧急</th><th>操作</th>
@@ -3607,6 +3650,25 @@ async function deleteTask(id) {
   saveState();
   showToast('任务已删除');
   renderTasks(document.getElementById('contentArea'));
+}
+
+// 任务清单：批量删除
+async function batchDeleteTasks() {
+  const cbs = Array.prototype.slice.call(document.querySelectorAll('.task-del-cb:checked'));
+  if (cbs.length === 0) { showToast('请先勾选要删除的任务', 'warn'); return; }
+  const ids = cbs.map(function(cb){ return cb.getAttribute('data-tid'); });
+  if (!(await appConfirm(`确定批量删除 ${ids.length} 个任务吗？此操作不可恢复。`))) return;
+  state.tasks = state.tasks.filter(function(t){ return ids.indexOf(t.id) < 0; });
+  saveState();
+  showToast(`已删除 ${ids.length} 个任务`);
+  renderTasks(document.getElementById('contentArea'));
+}
+function updateTaskSelCount() {
+  const cbs = document.querySelectorAll('.task-del-cb:checked');
+  const cnt = document.getElementById('taskSelCount');
+  const btn = document.getElementById('taskBatchDeleteBtn');
+  if (cnt) cnt.textContent = cbs.length;
+  if (btn) btn.disabled = cbs.length === 0;
 }
 
 function toggleTaskComplete(id) {
@@ -5110,6 +5172,37 @@ async function deleteStudent(id) {
   return true;
 }
 
+// 学生档案：批量删除（级联清理关联数据）
+async function batchDeleteStudents() {
+  const cbs = Array.prototype.slice.call(document.querySelectorAll('.student-select-cb:checked'));
+  if (cbs.length === 0) { showToast('请先勾选要删除的学生', 'warn'); return; }
+  const ids = cbs.map(function(cb){ return cb.getAttribute('data-sid'); });
+  const names = ids.map(function(id){ const s = state.students.find(function(x){ return x.id === id; }); return s ? s.name + '(' + s.studentNo + ')' : id; });
+  const preview = names.slice(0, 5).join('、') + (names.length > 5 ? (' 等 ' + names.length + ' 人') : '');
+  if (!(await appConfirm(`确定批量删除以下 ${ids.length} 名学生吗？\n${preview}\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
+    return;
+  }
+  ids.forEach(function(id) {
+    state.students = state.students.filter(function(s){ return s.id !== id; });
+    state.scores = state.scores.filter(function(sc){ return sc.studentId !== id; });
+    state.homeworkRecords = state.homeworkRecords.filter(function(h){ return h.studentId !== id; });
+    state.studentTasks = state.studentTasks.filter(function(t){ return t.studentId !== id; });
+    state.chatMessages = state.chatMessages.filter(function(m){ return m.studentId !== id; });
+  });
+  saveState();
+  showToast(`已批量删除 ${ids.length} 名学生`);
+  renderPage();
+}
+
+// 学生档案：更新勾选计数与批量删除按钮状态
+function updateStudentSelCount() {
+  const cbs = document.querySelectorAll('.student-select-cb:checked');
+  const cnt = document.getElementById('studentSelCount');
+  const btn = document.getElementById('studentBatchDeleteBtn');
+  if (cnt) cnt.textContent = cbs.length;
+  if (btn) btn.disabled = cbs.length === 0;
+}
+
 // 打开班级管理弹窗
 function openClassManager() {
   const renderList = () => {
@@ -5321,6 +5414,12 @@ function renderStudents(container) {
         <button class="btn btn-outline" data-click="openClassManager">⚙️ 班级</button>
       </div>
     </div>
+    <div class="flex-between gap-8" style="margin:8px 0 4px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="studentSelectAll"> 全选本页
+      </label>
+      <button class="btn btn-danger" id="studentBatchDeleteBtn" data-click="batchDeleteStudents" disabled style="font-size:12px;padding:4px 12px">🗑️ 批量删除 (<span id="studentSelCount">0</span>)</button>
+    </div>
     <div class="section-title">📇 学生档案 (${filtered.length})</div>
     <div class="student-grid" id="studentGrid"></div>
   `;
@@ -5379,6 +5478,7 @@ function renderStudentGrid(students) {
       ? '<span class="layer-badge none" title="暂无排名或成绩">未分层</span>'
       : '<span class="layer-badge ' + badgeClass + '">' + layer + '层</span>';
     return '<div class="student-card-item layer-' + badgeClass + '" data-initial="' + escapeAttr(initialChar) + '" data-click="openStudentProfile" data-click-args="[&quot;' + s.id + '&quot;]"' + (IS_M ? ' data-ev="contextmenu" data-ev-key="evRowMenu" data-ev-args="' + escapeAttr(JSON.stringify(['student', s.id])) + '"' : '') + '>'
+      + '<label class="student-card-check" onclick="event.stopPropagation()"><input type="checkbox" class="student-select-cb" data-sid="' + escapeAttr(s.id) + '"></label>'
       + '<div style="display:flex;justify-content:space-between;align-items:start">'
         + '<div>'
           + '<div class="student-card-name">' + escapeHtml(s.name) + ' <span class="text-muted text-sm">' + escapeHtml(s.studentNo) + '</span></div>'
@@ -7949,9 +8049,13 @@ function renderScoreAnalysis(container) {
     </div>
     <div class="analysis-card" style="margin-top:16px">
       <h3>成绩明细与排名</h3>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn btn-danger" id="scoreBatchDeleteBtn" data-click="batchDeleteScores" disabled style="font-size:12px;padding:4px 12px">🗑️ 批量删除 (<span id="scoreSelCount">0</span>)</button>
+      </div>
       <div style="overflow-x:auto">
       <table class="score-table" style="width:100%">
         <thead><tr>
+          <th style="width:30px"><input type="checkbox" id="scoreSelectAll" title="全选本场"></th>
           <th class="${thClass('studentNo')}" data-click="setScoreSort" data-click-args="[&quot;studentNo&quot;]">学号</th>
           <th>姓名</th>
           <th>班级</th>
@@ -8001,6 +8105,7 @@ function renderScoreAnalysis(container) {
             ? `<span style="background:${progress.progressColor}20;color:${progress.progressColor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">${progress.progressLabel}</span>`
             : '<span class="text-muted text-sm">首次</span>';
           return `<tr>
+            <td><input type="checkbox" class="score-del-cb" data-sid="${escapeAttr(s.id)}"></td>
             <td>${escapeHtml(studentNo)}</td>
             <td>${escapeHtml(s.name)}</td>
             <td>${escapeHtml(s.classId)}</td>
@@ -8349,20 +8454,27 @@ function handleScoreUpload(input) {
     if (lines.length < 2) { showToast('文件格式不对', 'error'); return; }
     let added = 0;
     let examName = '';
+    const skipped = [];
     for (let i = 1; i < lines.length; i++) {
       const cols = lines[i].split(',').map(c => c.trim());
       if (!cols[1] || isNaN(parseFloat(cols[3]))) continue;
       examName = cols[4] || '导入成绩';
-      // Remove existing score for same student + exam
-      const studentId = cols[0] || '';
-      state.scores = state.scores.filter(sc => !(sc.studentId === studentId && sc.examName === examName));
-      const classId = cols[2] || '1班';
+      const rawNo = (cols[0] || '').trim();
+      const classId = (cols[2] || '1班').trim();
       // 自动将 CSV 中的班级加入班级列表（支持非任教班级导入）
       if (classId && !getClasses().includes(classId)) {
         addClass(classId);
       }
+      // 以学号为标准匹配班级已有学生
+      const matched = rawNo ? state.students.find(s => s.studentNo === rawNo) : null;
+      if (!matched) {
+        skipped.push(rawNo || '(空学号)');
+        continue;
+      }
+      // Remove existing score for same student + exam
+      state.scores = state.scores.filter(sc => !(sc.studentId === matched.id && sc.examName === examName));
       state.scores.push({
-        id: uid(), studentId, name: cols[1], classId,
+        id: uid(), studentId: matched.id, name: matched.name, classId: matched.classId,
         score: parseFloat(cols[3]), examName, date: cols[5] || new Date().toISOString().slice(0,10)
       });
       added++;
@@ -8371,7 +8483,9 @@ function handleScoreUpload(input) {
     xiuxianRecalcLinggenSilent();
     state._selectedExam = examName;
     saveState();
-    showToast(`已导入 ${added} 条成绩记录`);
+    let msg = `已导入 ${added} 条成绩记录`;
+    if (skipped.length) msg += `；${skipped.length} 条学号未匹配已跳过：${skipped.join('、')}`;
+    showToast(msg, skipped.length ? 'warn' : 'success', 8000);
     renderScoreAnalysis(document.getElementById('analysisContainer'));
   };
   reader.readAsText(file, 'UTF-8');
@@ -8440,6 +8554,27 @@ async function deleteScore(id) {
   saveState();
   showToast('成绩已删除');
   renderScoreAnalysis(document.getElementById('analysisContainer'));
+}
+
+// 成绩记录：批量删除
+async function batchDeleteScores() {
+  const cbs = Array.prototype.slice.call(document.querySelectorAll('.score-del-cb:checked'));
+  if (cbs.length === 0) { showToast('请先勾选要删除的成绩', 'warn'); return; }
+  const ids = cbs.map(function(cb){ return cb.getAttribute('data-sid'); });
+  const exam = state._selectedExam || '';
+  if (!(await appConfirm(`确定批量删除 ${ids.length} 条成绩记录吗？此操作不可恢复。`))) return;
+  state.scores = state.scores.filter(function(s){ return ids.indexOf(s.id) < 0; });
+  if (exam) recalculateRanks(exam);
+  saveState();
+  showToast(`已删除 ${ids.length} 条成绩`);
+  renderScoreAnalysis(document.getElementById('analysisContainer'));
+}
+function updateScoreSelCount() {
+  const cbs = document.querySelectorAll('.score-del-cb:checked');
+  const cnt = document.getElementById('scoreSelCount');
+  const btn = document.getElementById('scoreBatchDeleteBtn');
+  if (cnt) cnt.textContent = cbs.length;
+  if (btn) btn.disabled = cbs.length === 0;
 }
 
 /* ===================== Quick Tools: 01 自动化提醒 ===================== */
@@ -9504,6 +9639,7 @@ async function initApp() {
   try {
     loadState();
     migrateCloudSyncState();
+    migrateScoreStudentIds();
     loadThemeSettings();
 
   // Register PWA manifest (enhanced for multi-platform install)
@@ -9820,6 +9956,28 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('sidebarOverlay').classList.toggle('show');
   });
   document.getElementById('sidebarOverlay').addEventListener('click', closeSidebar);
+
+  // 学生档案：批量勾选事件委托（全选 + 计数更新）
+  document.addEventListener('change', function(e) {
+    const t = e.target;
+    if (!t) return;
+    if (t.id === 'studentSelectAll') {
+      document.querySelectorAll('.student-select-cb').forEach(function(cb){ cb.checked = t.checked; });
+      updateStudentSelCount();
+    } else if (t.classList && t.classList.contains('student-select-cb')) {
+      updateStudentSelCount();
+    } else if (t.id === 'taskSelectAll') {
+      document.querySelectorAll('.task-del-cb').forEach(function(cb){ cb.checked = t.checked; });
+      updateTaskSelCount();
+    } else if (t.classList && t.classList.contains('task-del-cb')) {
+      updateTaskSelCount();
+    } else if (t.id === 'scoreSelectAll') {
+      document.querySelectorAll('.score-del-cb').forEach(function(cb){ cb.checked = t.checked; });
+      updateScoreSelCount();
+    } else if (t.classList && t.classList.contains('score-del-cb')) {
+      updateScoreSelCount();
+    }
+  });
 });
 
 
