@@ -2607,3 +2607,11 @@ html.ui-mobile .score-table td:first-child {
   position: sticky; left: 0; z-index: 2; background: var(--bg-card, #fff);
 }
 html.ui-mobile .score-table thead th:first-child { z-index: 3; }
+
+/* 撤销/重做按钮禁用态 */
+#btnUndo:disabled, #btnRedo:disabled {
+  opacity: 0.4; cursor: not-allowed; color: var(--text-muted);
+}
+#btnUndo:not(:disabled):hover, #btnRedo:not(:disabled):hover {
+  background: var(--bg-hover, #f0f3f7); border-color: var(--primary);
+}

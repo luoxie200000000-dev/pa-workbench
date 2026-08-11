@@ -92,6 +92,12 @@
       <div class="page-title" id="pageTitle">任务清单</div>
       <div class="top-bar-right">
         <div id="pwdStatusBar" style="display:flex;align-items:center;gap:6px"></div>
+        <button class="undo-btn" id="btnUndo" data-click="undoState" disabled title="无可撤销操作" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px;color:var(--text-body)">
+          <span style="font-size:15px">↶</span><span>撤销</span>
+        </button>
+        <button class="undo-btn" id="btnRedo" data-click="redoState" disabled title="无可重做操作" style="background:transparent;border:1px solid var(--border);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:4px;color:var(--text-body)">
+          <span style="font-size:15px">↷</span><span>重做</span>
+        </button>
         <button class="save-btn saved" id="saveBtn" data-click="commitSave" title="点击保存数据到本地">
           <span style="font-size:14px">💾</span><span id="saveBtnText">已保存</span>
         </button>

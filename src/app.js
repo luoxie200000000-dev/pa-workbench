@@ -250,7 +250,7 @@ let state = {
 // ===== 可序列化状态辅助函数 =====
 // 统一剥离不可序列化的字段（如 FileSystemFileHandle），防止 JSON.stringify 产生空对象或抛异常
 function getSerializableState(extra) {
-  const { localFileHandle, ...rest } = state;
+  const { localFileHandle, _undoStack, _redoStack, ...rest } = state;
   rest.currentMonth = state.currentMonth.toISOString();
   if (extra) Object.assign(rest, extra);
   return rest;
@@ -396,7 +396,15 @@ var _saveStateTimer = null;       // 防抖定时器
 var _saveStatePending = false;    // 是否有待写入
 var _saveStateLatest = null;      // 最新待写数据
 
-function saveState() {
+function saveState(opts) {
+  // 可选：先压一份快照到 undo 栈（仅对破坏性操作传 {pushUndo:true}）
+  if (opts && opts.pushUndo) {
+    if (!state._undoStack) { state._undoStack = []; state._redoStack = []; }
+    if (state._undoStack.length >= 5) state._undoStack.shift();
+    state._undoStack.push(_cloneStateForUndo(state));
+    state._redoStack = [];
+    updateUndoRedoButtons();
+  }
   // 同步记录最新状态（确保防抖期间用最新数据）
   _saveStateLatest = getSerializableState({ _tempTimestamp: Date.now() });
   _saveStatePending = true;
@@ -405,6 +413,80 @@ function saveState() {
   // 防抖：300ms 内合并多次调用为一次写入
   if (_saveStateTimer) clearTimeout(_saveStateTimer);
   _saveStateTimer = setTimeout(_flushSaveState, 300);
+}
+
+// 撤销栈深度上限
+var UNDO_LIMIT = 5;
+// 用于撤销/重做的轻量深拷贝（只拷贝破坏性操作关心的字段，避免大对象全拷）
+function _cloneStateForUndo(src) {
+  return {
+    students: JSON.parse(JSON.stringify(src.students || [])),
+    scores: JSON.parse(JSON.stringify(src.scores || [])),
+    scoreHistory: JSON.parse(JSON.stringify(src.scoreHistory || [])),
+    tasks: JSON.parse(JSON.stringify(src.tasks || [])),
+    homeworkRecords: JSON.parse(JSON.stringify(src.homeworkRecords || [])),
+    studentTasks: JSON.parse(JSON.stringify(src.studentTasks || [])),
+    chatMessages: JSON.parse(JSON.stringify(src.chatMessages || [])),
+    plans: JSON.parse(JSON.stringify(src.plans || [])),
+    progress: JSON.parse(JSON.stringify(src.progress || [])),
+    schedulePeriods: JSON.parse(JSON.stringify(src.schedulePeriods || [])),
+    scheduleDays: JSON.parse(JSON.stringify(src.scheduleDays || [])),
+    adjustments: JSON.parse(JSON.stringify(src.adjustments || [])),
+    reminders: JSON.parse(JSON.stringify(src.reminders || []))
+  };
+}
+
+function canUndo() { return !!(state._undoStack && state._undoStack.length > 0); }
+function canRedo() { return !!(state._redoStack && state._redoStack.length > 0); }
+
+function updateUndoRedoButtons() {
+  var btnUndo = document.getElementById('btnUndo');
+  var btnRedo = document.getElementById('btnRedo');
+  if (btnUndo) {
+    btnUndo.disabled = !canUndo();
+    btnUndo.title = canUndo() ? '撤销 (Ctrl+Z，共 ' + state._undoStack.length + '/' + UNDO_LIMIT + ' 步)' : '无可撤销操作';
+  }
+  if (btnRedo) {
+    btnRedo.disabled = !canRedo();
+    btnRedo.title = canRedo() ? '重做 (Ctrl+Y，共 ' + state._redoStack.length + '/' + UNDO_LIMIT + ' 步)' : '无可重做操作';
+  }
+}
+
+function undoState() {
+  if (!canUndo()) { showToast('没有可撤销的操作', 'info'); return; }
+  var prev = state._undoStack.pop();
+  // 把当前状态压到 redo 栈
+  if (!state._redoStack) state._redoStack = [];
+  if (state._redoStack.length >= UNDO_LIMIT) state._redoStack.shift();
+  state._redoStack.push(_cloneStateForUndo(state));
+  // 还原 prev 到 state
+  _restoreStateFromSnapshot(prev);
+  saveState();
+  updateUndoRedoButtons();
+  // 重渲染当前页
+  try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('撤销后渲染失败:', e); }
+  showToast('已撤销 (剩余 ' + state._undoStack.length + ' 步)', 'success');
+}
+
+function redoState() {
+  if (!canRedo()) { showToast('没有可重做的操作', 'info'); return; }
+  var next = state._redoStack.pop();
+  if (!state._undoStack) state._undoStack = [];
+  if (state._undoStack.length >= UNDO_LIMIT) state._undoStack.shift();
+  state._undoStack.push(_cloneStateForUndo(state));
+  _restoreStateFromSnapshot(next);
+  saveState();
+  updateUndoRedoButtons();
+  try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('重做后渲染失败:', e); }
+  showToast('已重做', 'success');
+}
+
+function _restoreStateFromSnapshot(snap) {
+  var keys = Object.keys(snap);
+  keys.forEach(function(k) {
+    if (k === 'currentMonth') return; // 保持当前月份不变
+    state[k] = snap[k];
+  });
 }
 
 // 实际执行写入（防抖触发）
@@ -556,7 +638,7 @@ var CLOUD_SECTIONS = [
 var CLOUD_LEAF_MAP = {};
 CLOUD_SECTIONS.forEach(function(g) { g.children.forEach(function(c) { CLOUD_LEAF_MAP[c.key] = c; }); });
 function cloudLeafByKey(k) { return CLOUD_LEAF_MAP[k]; }
-var CLOUD_DEFAULT_SECTIONS = ['homeworkRecords', 'studentTasks', 'chatMessages', 'students'];
+var CLOUD_DEFAULT_SECTIONS = ['homeworkRecords', 'studentTasks', 'chatMessages', 'students', 'scores', 'xiuxian', 'scoreHistory'];
 function cloudSectionKeysAll() { return Object.keys(CLOUD_LEAF_MAP); }
 
 function s3Configured(strict) {
@@ -3641,6 +3723,7 @@ function saveTask(id) {
     urgent: document.getElementById('taskUrgent').checked,
     completed: document.getElementById('taskCompleted').checked
   };
+  saveState({pushUndo:true});
   if (id && id !== 'null') {
     const t = state.tasks.find(x=>x.id===id);
     Object.assign(t, data);
@@ -3655,6 +3738,7 @@ function saveTask(id) {
 }
 
 async function deleteTask(id) {
+  saveState({pushUndo:true});
   if (!(await appConfirm('确认删除此任务？', {danger:true}))) return;
   state.tasks = state.tasks.filter(t=>t.id!==id);
   saveState();
@@ -3667,6 +3751,7 @@ async function batchDeleteTasks() {
   const cbs = Array.prototype.slice.call(document.querySelectorAll('.task-del-cb:checked'));
   if (cbs.length === 0) { showToast('请先勾选要删除的任务', 'warn'); return; }
   const ids = cbs.map(function(cb){ return cb.getAttribute('data-tid'); });
+  saveState({pushUndo:true});
   if (!(await appConfirm(`确定批量删除 ${ids.length} 个任务吗？此操作不可恢复。`))) return;
   state.tasks = state.tasks.filter(function(t){ return ids.indexOf(t.id) < 0; });
   saveState();
@@ -5169,6 +5254,7 @@ async function deleteStudent(id) {
   const idx = state.students.findIndex(s => s.id === id);
   if (idx < 0) { showToast('学生不存在', 'error'); return false; }
   const s = state.students[idx];
+  saveState({pushUndo:true});
   if (!(await appConfirm(`确定要删除学生「${s.name} (${s.studentNo})」吗？\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
     return false;
   }
@@ -5189,6 +5275,7 @@ async function batchDeleteStudents() {
   const ids = cbs.map(function(cb){ return cb.getAttribute('data-sid'); });
   const names = ids.map(function(id){ const s = state.students.find(function(x){ return x.id === id; }); return s ? s.name + '(' + s.studentNo + ')' : id; });
   const preview = names.slice(0, 5).join('、') + (names.length > 5 ? (' 等 ' + names.length + ' 人') : '');
+  saveState({pushUndo:true});
   if (!(await appConfirm(`确定批量删除以下 ${ids.length} 名学生吗？\n${preview}\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
     return;
   }
@@ -5322,6 +5409,7 @@ function saveStudentEditor(id) {
   };
   if (!data.name) { showToast('姓名不能为空', 'error'); return; }
   if (!data.studentNo) { showToast('学号不能为空', 'error'); return; }
+  saveState({pushUndo:true});
   if (!id) {
     addStudent(data);
   } else {
@@ -5670,6 +5758,7 @@ function toggleStudentTag(studentId, tag) {
 function saveStudentProfile(id) {
   const s = state.students.find(x => x.id === id);
   if (!s) return;
+  saveState({pushUndo:true});
   s.name = document.getElementById('editName').value.trim() || s.name;
   s.studentNo = document.getElementById('editStudentNo').value.trim() || s.studentNo;
   s.classId = document.getElementById('editClass').value;
@@ -5913,6 +6002,7 @@ function saveTaskInfo(id) {
     content: document.getElementById('tiContent').value.trim(),
     answer: document.getElementById('tiAnswer').value.trim()
   };
+  saveState({pushUndo:true});
   if (id && id !== 'null') {
     const t = state.studentTasks.find(x => x.id === id);
     if (t) { Object.assign(t, data); if (!t.answerImages) t.answerImages = []; }
@@ -5928,6 +6018,7 @@ function saveTaskInfo(id) {
 }
 
 async function deleteStudentTask(id) {
+  saveState({pushUndo:true});
   if (!(await appConfirm('确认删除此作业任务？', {danger:true}))) return;
   state.studentTasks = state.studentTasks.filter(t => t.id !== id);
   saveState();
@@ -7389,7 +7480,7 @@ function renderDashboard(container) {
                       <td>${escapeHtml(s.studentNo||'')}</td>
                       <td>${escapeHtml(s.name)}</td>
                       <td>${escapeHtml(s.classId)}</td>
-                      <td>${s.score}</td>
+                      <td><strong>${s.score}</strong></td>
                       <td><span style="color:${color};font-weight:600">${escapeHtml(s.label)}</span></td>
                     </tr>`;
                   }).join('')}</tbody>
@@ -7649,7 +7740,19 @@ function recalculateRanks(examName) {
 }
 
 function getExamList() {
-  return [...new Set(state.scores.map(s => s.examName))];
+  const set = [...new Set(state.scores.map(s => s.examName).filter(Boolean))];
+  // 按该考试最早 score.date 升序；无日期的排最后
+  const dateOf = {};
+  state.scores.forEach(s => {
+    if (!s.examName || !s.date) return;
+    const k = s.examName;
+    if (!dateOf[k] || s.date < dateOf[k]) dateOf[k] = s.date;
+  });
+  return set.sort((a, b) => {
+    const da = dateOf[a] || '\u9999';
+    const db = dateOf[b] || '\u9999';
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
 }
 
 function getScoreProgress(studentId, currentExam) {
@@ -8017,7 +8120,7 @@ function renderScoreAnalysis(container) {
     </div>
     <div class="stats-row">
       <div class="stat-card"><span class="stat-icon">👥</span><div class="stat-num">${examined.length} / ${examined.length + unexaminedOnly.length}</div><div class="stat-label">参考 / 全班</div></div>
-      <div class="stat-card"><span class="stat-icon">📊</span><div class="stat-num">${stats.avg}</div><div class="stat-label">平均分</div></div>
+      <div class="stat-card"><span class="stat-icon">📊</span><div class="stat-num">${stats.avg.toFixed(2)}</div><div class="stat-label">平均分</div></div>
       <div class="stat-card"><span class="stat-icon">🏆</span><div class="stat-num">${stats.max}</div><div class="stat-label">最高分</div></div>
       <div class="stat-card"><span class="stat-icon">📉</span><div class="stat-num">${stats.min}</div><div class="stat-label">最低分</div></div>
     </div>
@@ -8304,7 +8407,7 @@ function getScoreStats(scores) {
   const arr = (scores || state.scores).map(s => s.score).filter(v => v != null && !isNaN(v));
   const count = arr.length;
   if (count === 0) return { count:0, avg:0, max:0, min:0, distribution:{ap:0,a:0,bp:0,b:0,cp:0,c:0} };
-  const avg = Math.round(arr.reduce((a,b)=>a+b,0)/count);
+  const avg = Number((arr.reduce((a,b)=>a+b,0)/count).toFixed(2));
   const max = Math.max(...arr);
   const min = Math.min(...arr);
   const dist = { ap:0, a:0, bp:0, b:0, cp:0, c:0 };
@@ -8481,6 +8584,7 @@ function handleScoreUpload(input) {
     const text = e.target.result.replace(/^\ufeff/, '');
     const lines = text.split('\n').filter(l => l.trim());
     if (lines.length < 2) { showToast('文件格式不对', 'error'); return; }
+    saveState({pushUndo:true});
     let added = 0;
     let examName = '';
     const skipped = [];
@@ -8591,6 +8695,7 @@ async function batchDeleteScores() {
   if (cbs.length === 0) { showToast('请先勾选要删除的成绩', 'warn'); return; }
   const ids = cbs.map(function(cb){ return cb.getAttribute('data-sid'); });
   const exam = state._selectedExam || '';
+  saveState({pushUndo:true});
   if (!(await appConfirm(`确定批量删除 ${ids.length} 条成绩记录吗？此操作不可恢复。`))) return;
   state.scores = state.scores.filter(function(s){ return ids.indexOf(s.id) < 0; });
   if (exam) recalculateRanks(exam);
@@ -9979,6 +10084,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // 兜底渲染
     try { navigateTo('tasks'); } catch(e2) {}
   });
+  // 全局快捷键：Ctrl+Z 撤销 / Ctrl+Y 重做（输入框聚焦时不触发，避免影响文字编辑）
+  document.addEventListener('keydown', function(e) {
+    var ae = document.activeElement;
+    var inEditable = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+    if (inEditable) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    var k = (e.key || '').toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoState(); }
+    else if ((k === 'y') || (k === 'z' && e.shiftKey)) { e.preventDefault(); redoState(); }
+  });
+  // 初始化撤销栈 + 按钮态
+  if (!state._undoStack) state._undoStack = [];
+  if (!state._redoStack) state._redoStack = [];
+  setTimeout(updateUndoRedoButtons, 50);
   // Mobile sidebar toggle
   document.getElementById('mobileMenuBtn').addEventListener('click', function() {
     document.getElementById('sidebar').classList.toggle('open');
@@ -12148,6 +12267,8 @@ const __CLICK = {
   closeThemePanel: closeThemePanel,
   cloudTestConnection: cloudTestConnection,
   commitSave: commitSave,
+  undoState: undoState,
+  redoState: redoState,
   confirmImport: confirmImport,
   confirmMerge: confirmMerge,
   confirmResetPassword: confirmResetPassword,
