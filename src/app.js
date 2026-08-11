@@ -552,13 +552,20 @@ function enableTopBarDragScroll() {
     startX = pageX(e);
     startScroll = scroller.scrollLeft;
     clearTimeout(longPressTimer);
-    longPressTimer = setTimeout(function() { longPressed = true; bar.classList.add('dragging'); }, 450);
+    longPressTimer = setTimeout(function() {
+      // 仅当真实溢出才进入拖动态，避免宽屏无溢出时误加 dragging
+      if (scroller.scrollWidth > scroller.clientWidth + 1) {
+        longPressed = true;
+        bar.classList.add('dragging');
+      }
+    }, 450);
   }
   function onMove(e) {
     if (!__topBarScrollEnabled) return;
     if (!isDown) return;
     var dx = pageX(e) - startX;
     if (Math.abs(dx) > THRESHOLD) {
+      if (scroller.scrollWidth <= scroller.clientWidth + 1) return; // 无溢出不进入拖动
       clearTimeout(longPressTimer);
       moved = true;
       bar.classList.add('dragging');
@@ -597,7 +604,10 @@ function updateTopBarDragState() {
   var bar = document.querySelector('.top-bar');
   var scroller = document.querySelector('.top-bar-right');
   if (!bar || !scroller) return;
-  if (__topBarScrollEnabled) {
+  // 仅在「07 顶栏滚动开启」且「顶栏右侧真实溢出」时才进入可拖动态：
+  // 否则宽屏/内容未溢出时顶栏会一直显示抓取光标却拖不动，造成误导
+  var overflowing = scroller.scrollWidth > scroller.clientWidth + 1;
+  if (__topBarScrollEnabled && overflowing) {
     bar.classList.add('can-drag');
     bar.classList.add('top-bar-overflow');
   } else {

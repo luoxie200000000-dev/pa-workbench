@@ -2718,50 +2718,10 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 .top-bar.can-drag.dragging { cursor: grabbing; }
 .top-bar.dragging { user-select: none; }
 
-/* ≤1050px：顶栏右侧按钮过多时支持横向滚动 + 撤销/重做折叠 */
-@media (max-width: 1050px) {
-  .top-bar-right {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    flex-wrap: nowrap;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-  }
-  .top-bar-right::-webkit-scrollbar { height: 4px; }
-  .top-bar-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-  .top-bar-right::-webkit-scrollbar-track { background: transparent; }
-  .top-bar-right > * { flex-shrink: 0; }
-  .undo-redo-inline { display: none !important; }
-  .undo-redo-fold { display: inline-flex !important; }
-  /* 窄屏：状态/数据/主题 收纳进「更多」折叠 */
-  .status-btn[data-click="showRuntimeStatus"],
-  .status-btn[data-click="openDataManager"],
-  .theme-btn { display: none !important; }
-  .more-fold { display: inline-flex !important; }
-}
-
-/* 手机模式（.ui-mobile）：与 ≤1050px 一致的收纳行为——撤销/重做折叠 + 顶栏可横拖
-   关键：窄屏行为不能只卡在视口宽度媒体查询上，手机模式要单独生效 */
-.ui-mobile .top-bar-right {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  flex-wrap: nowrap;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-}
-.ui-mobile .top-bar-right::-webkit-scrollbar { height: 4px; }
-.ui-mobile .top-bar-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-.ui-mobile .top-bar-right::-webkit-scrollbar-track { background: transparent; }
-.ui-mobile .top-bar-right > * { flex-shrink: 0; }
-.ui-mobile .undo-redo-inline { display: none !important; }
-.ui-mobile .undo-redo-fold { display: inline-flex !important; }
-/* 手机模式：状态/数据/主题 收进「更多」折叠（原仅 display:none 隐藏，现改为可折叠访问） */
-.ui-mobile .theme-btn { display: none !important; }
-.ui-mobile .more-fold { display: inline-flex !important; }
+/* 顶栏折叠/收纳：统一由永久 !important 规则控制（撤销/重做、状态/数据/主题默认折叠）；
+   顶栏横向滚动容器：统一由 JS 在「07 顶栏滚动开启 + 真实溢出」时加 .top-bar-overflow 控制。
+   下方 .top-bar 规则即唯一来源，已删除原先重复的 @media(max-width:1050px) 与 .ui-mobile 两层，
+   避免日后改一处漏一处。 */
 
 /* 顶栏溢出（任意视口宽度均生效，JS 检测 scrollWidth>clientWidth 后加 .top-bar-overflow）：
    撤销/重做折叠为 ⋮、状态/数据/主题收纳进「更多」、顶栏可横拖——不依赖视口宽度媒体查询，
