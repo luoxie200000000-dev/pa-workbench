@@ -6708,6 +6708,7 @@ function openBatchHwModal() {
         <option value="incomplete">未上交</option>
         <option value="perfunctory">敷衍完成</option>
         <option value="resubmitted">已补交</option>
+        <option value="pending">待标记</option>
       </select>
     </div>
     <div class="form-group">
@@ -6742,11 +6743,13 @@ function saveBatchHwStatus() {
         // 手动指定批阅状态，优先于自动逻辑
         r.reviewStatus = reviewStatusChoice;
       } else {
-        // Auto-set review status based on homework status
+        // 与单条编辑一致：锁定→待批改；隐藏→已处理；其余（含待标记/已补交）→待批改
         if (isReviewLocked(status)) {
           r.reviewStatus = 'pending';
         } else if (isReviewHidden(status)) {
           r.reviewStatus = 'reviewed';
+        } else {
+          r.reviewStatus = 'pending';
         }
       }
     }
