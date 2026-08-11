@@ -2,151 +2,57 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, master]
-    paths-ignore:
-      - '**.md'
-      - '.vscode/**'
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: false
-        default: 'release'
-        type: choice
-        options:
-          - debug
-          - release
 
-env:
-  CARGO_TERM_COLOR: always
+permissions:
+  contents: read
 
 jobs:
-  build-apk:
-    name: Build Android APK (${{ github.event.inputs.build_type || 'debug' }})
-    runs-on: ubuntu-24.04
+  android:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "27.0.12077973"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- JDK 17 (required by Gradle 8.x / Tauri 2.x) ---
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          distribution: zulu
+          java-version: "17"
 
-      # --- Android SDK ---
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-34 build-tools;34.0.0 ndk;27.1.12297006'
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses || true
+      - name: Install Android components
+        run: |
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
-      # --- Node ---
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      # --- Rust ---
-      - name: Setup Rust
+      - name: Setup Rust targets
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
-      # --- System deps (needed for Tauri CLI on Linux) ---
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-      # --- Frontend deps ---
-      - name: Install npm dependencies
-        run: npm ci
+      - name: Install dependencies
+        run: npm install
 
-      # --- Init Android project ---
-      # gen/android/ is gitignored — always init fresh in CI
-      - name: Init Tauri Android project
-        run: |
-          npx tauri android init --skip-targets-install
-          # Ensure Gradle wrapper is executable
-          chmod +x src-tauri/gen/android/gradlew 2>/dev/null || true
+      - name: Init Tauri Android
+        run: npx tauri android init
 
-      # --- 只打 arm64-v8a 单包，关掉 universal 分包（省构建时间 + 下载减半）---
-      - name: Disable universal APK split
-        run: |
-          f=$(find src-tauri/gen/android -name 'build.gradle*' -path '*/app/*' | head -1)
-          echo "Patching: $f"
-          # Tauri 默认 isUniversalApk = true，改成 false；若格式不同则 sed 无命中（不影响兜底上传）
-          sed -i 's/isUniversalApk = true/isUniversalApk = false/' "$f" 2>/dev/null || true
-          grep -n 'isUniversalApk' "$f" || echo "isUniversalApk not found (ok, upload glob still filters)"
+      - name: Build APK (debug signed, sideloadable)
+        run: npx tauri android build --apk --debug
 
-      # --- Build APK ---
-      # 必须用 --debug：Tauri 默认打 release（未签名），Android 拒绝安装；
-      # --debug 会用调试密钥自动签名，产出可直接安装的包。
-      - name: Build Android APK
-        run: |
-          npx tauri android build --debug --target aarch64
-
-      # --- Locate & prepare APK for upload ---
-      # Tauri 2.x 的实际输出路径不稳定（Run#16/#17 均在 outputs/apk/ 下 miss），
-      # 故用 find 全局定位后复制到固定目录，再从固定目录上传。
-      - name: Locate and prepare APK
-        run: |
-          mkdir -p output
-          echo "=== All APKs found ==="
-          find . -name '*.apk' -type f 2>/dev/null | while read f; do ls -lh "$f"; done || echo "(none)"
-          echo ""
-          # 复制 arm64-v8a debug 包到 output/
-          found=0
-          for f in $(find . -name '*arm64*v8a*debug*.apk' -type f 2>/dev/null); do
-            cp "$f" "output/"
-            echo "✅ Copied: $(basename "$f")"
-            found=$((found+1))
-          done
-          # fallback: 如果精确名没命中，试任何含 arm64 的 apk
-          if [ $found -eq 0 ]; then
-            for f in $(find . -name '*arm64*.apk' -type f 2>/dev/null); do
-              cp "$f" "output/"
-              echo "⚠️ Fallback copied: $(basename "$f")"
-              found=$((found+1))
-            done
-          fi
-          # final fallback: 任何 debug apk
-          if [ $found -eq 0 ]; then
-            for f in $(find . -name '*debug*.apk' -type f 2>/dev/null); do
-              cp "$f" "output/"
-              echo "🔴 Last-resort copied: $(basename "$f")"
-              found=$((found+1))
-            done
-          fi
-          echo ""
-          echo "=== Files in output/ ==="
-          ls -lh output/ 2>/dev/null || echo "(empty)"
-          if [ $found -eq 0 ]; then
-            echo "::error::No APK found anywhere in the workspace!"
-            exit 1
-          fi
-
-      # --- Upload artifacts ---
-      # 从固定 output/ 目录上传，不再依赖猜测 Tauri 输出路径。
-      - name: Upload APK (signed debug, arm64-v8a single-arch)
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: pa-workbench-android-debug
-          path: output/*.apk
-          retention-days: 30
-
-      # --- Summary ---
-      - name: Build summary
-        run: |
-          echo "### ✅ APK 构建完成（debug 自动签名，arm64-v8a 单包，可直接安装）" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "下载上方 **Artifacts** 中的 \`pa-workbench-android-debug\` zip，解压后只有一个 .apk 文件，传到手机直接安装即可。" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 构建类型 | debug（已签名） |" >> $GITHUB_STEP_SUMMARY
-          echo "| 架构 | arm64-v8a 单包 |" >> $GITHUB_STEP_SUMMARY
-          echo "| 提交 | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          name: pa-workbench-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
