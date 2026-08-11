@@ -102,9 +102,9 @@
           <button class="undo-redo-fold" id="btnUndoRedoFold" data-click="toggleUndoRedoMenu" title="撤销/重做" aria-haspopup="true" aria-expanded="false">
             <span style="font-size:16px;line-height:1">⋮</span>
           </button>
-          <div class="undo-redo-menu" id="undoRedoMenu" role="menu" hidden>
-            <button class="undo-redo-menu-item" id="menuItemUndo" data-click="undoState" disabled role="menuitem"><span>↶</span><span>撤销</span></button>
-            <button class="undo-redo-menu-item" id="menuItemRedo" data-click="redoState" disabled role="menuitem"><span>↷</span><span>重做</span></button>
+          <div class="undo-redo-menu" id="undoRedoMenu" role="group" hidden>
+            <button class="undo-redo-menu-item" id="menuItemUndo" data-click="undoState" disabled><span>↶</span><span>撤销</span></button>
+            <button class="undo-redo-menu-item" id="menuItemRedo" data-click="redoState" disabled><span>↷</span><span>重做</span></button>
           </div>
         </span>
         <button class="save-btn saved" id="saveBtn" data-click="commitSave" title="点击保存数据到本地">

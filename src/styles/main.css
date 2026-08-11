@@ -2617,8 +2617,8 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
   background: var(--bg-hover, #f0f3f7); border-color: var(--primary);
 }
 
-/* 撤销/重做 折叠入口 + 下拉菜单（≤1050px 收纳两个按钮） */
-.undo-redo-fold-wrap { position: relative; display: inline-flex; }
+/* 撤销/重做 折叠入口 + 内联横向展开菜单（≤1050px 收纳两个按钮，点开横向并排） */
+.undo-redo-fold-wrap { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 6px; }
 .undo-redo-fold {
   background: transparent;
   border: 1px solid var(--border);
@@ -2635,34 +2635,28 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 .undo-redo-fold[aria-expanded="true"] { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
 
 .undo-redo-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  background: var(--bg-card, #fff);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
-  min-width: 150px;
-  padding: 6px 0;
-  z-index: 1200;
-  display: flex;
-  flex-direction: column;
+  display: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
 }
+.undo-redo-menu:not([hidden]) { display: inline-flex; }
 .undo-redo-menu[hidden] { display: none; }
 .undo-redo-menu-item {
   background: transparent;
-  border: none;
-  padding: 9px 16px;
-  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
   cursor: pointer;
   font-size: 13px;
   color: var(--text-body);
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-.undo-redo-menu-item:hover:not(:disabled) { background: var(--bg-hover, #f0f3f7); }
+.undo-redo-menu-item:hover:not(:disabled) { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
 .undo-redo-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .undo-redo-menu-item span:first-child { font-size: 15px; }
 
