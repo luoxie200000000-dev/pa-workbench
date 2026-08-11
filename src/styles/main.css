@@ -380,6 +380,13 @@ a { color: var(--primary-dark); text-decoration: none; }
   color: var(--primary-darker);
   font-weight: 600;
 }
+/* 07 顶栏滚动 开关高亮（开启时） */
+.nav-item.ts-on {
+  background: var(--primary-lightest);
+  border-left-color: var(--primary);
+  color: var(--primary-darker);
+  font-weight: 600;
+}
 .nav-item .nav-icon { font-size: 16px; width: 20px; text-align: center; }
 .sidebar-footer {
   padding: 12px 18px;
@@ -2617,7 +2624,8 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
   background: var(--bg-hover, #f0f3f7); border-color: var(--primary);
 }
 
-/* 撤销/重做 折叠入口 + 内联横向展开菜单（≤1050px 收纳两个按钮，点开横向并排） */
+/* 撤销/重做 折叠入口 + 内联横向展开菜单（默认即折叠为 ⋮，不依赖视口/溢出检测） */
+.undo-redo-inline { display: none !important; }
 .undo-redo-fold-wrap { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 6px; }
 .undo-redo-fold {
   background: transparent;
@@ -2627,7 +2635,7 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
   cursor: pointer;
   font-size: 13px;
   color: var(--text-body);
-  display: none;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
 }
@@ -2660,7 +2668,7 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 .undo-redo-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .undo-redo-menu-item span:first-child { font-size: 15px; }
 
-/* 更多 折叠入口 + 内联横向展开菜单（收纳 状态/数据/主题，与撤销/重做折叠同机制） */
+/* 更多 折叠入口 + 内联横向展开菜单（默认即收纳 状态/数据/主题，不依赖视口/溢出检测） */
 .more-fold-wrap { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 6px; }
 .more-fold {
   background: transparent;
@@ -2670,10 +2678,14 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
   cursor: pointer;
   font-size: 13px;
   color: var(--text-body);
-  display: none;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
 }
+/* 状态/数据/主题 默认收进「更多」折叠（永久隐藏内联，不依赖视口/溢出检测） */
+.status-btn[data-click="showRuntimeStatus"],
+.status-btn[data-click="openDataManager"],
+.theme-btn { display: none !important; }
 .more-fold:hover { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
 .more-fold[aria-expanded="true"] { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
 .more-menu {

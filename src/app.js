@@ -534,6 +534,10 @@ function closeMoreMenu() {
 }
 
 // 顶栏融合拖拽滚动：长按兜底 + 移动即时拖，点按钮不受影响
+// 顶栏滚动开关（默认开启，localStorage 持久化）。注意：state 会被整体恢复逻辑覆盖（state = ...），
+// 故不能放在 state 里，必须用独立全局变量
+var __topBarScrollEnabled = (localStorage.getItem('pa_topbar_scroll') !== 'off');
+
 function enableTopBarDragScroll() {
   var bar = document.querySelector('.top-bar');
   var scroller = document.querySelector('.top-bar-right');
@@ -542,6 +546,7 @@ function enableTopBarDragScroll() {
   var THRESHOLD = 6;
   function pageX(e) { return e.touches && e.touches.length ? e.touches[0].pageX : e.pageX; }
   function onDown(e) {
+    if (!__topBarScrollEnabled) return;
     if (e.button !== undefined && e.button !== 0) return;
     isDown = true; moved = false; longPressed = false;
     startX = pageX(e);
@@ -550,6 +555,7 @@ function enableTopBarDragScroll() {
     longPressTimer = setTimeout(function() { longPressed = true; bar.classList.add('dragging'); }, 450);
   }
   function onMove(e) {
+    if (!__topBarScrollEnabled) return;
     if (!isDown) return;
     var dx = pageX(e) - startX;
     if (Math.abs(dx) > THRESHOLD) {
@@ -586,18 +592,29 @@ function enableTopBarDragScroll() {
   window.addEventListener('resize', updateTopBarDragState);
 }
 
-// 重新计算顶栏是否可拖动（溢出时加 .can-drag 光标 + .top-bar-overflow 触发折叠/收纳）；切换手机/桌面模式后也要调用
+// 顶栏滚动开关逻辑：开启时整条顶栏可拖动（加 .can-drag + .top-bar-overflow 让右侧可横滚），关闭时还原
 function updateTopBarDragState() {
   var bar = document.querySelector('.top-bar');
   var scroller = document.querySelector('.top-bar-right');
   if (!bar || !scroller) return;
-  if (scroller.scrollWidth > scroller.clientWidth + 1) {
+  if (__topBarScrollEnabled) {
     bar.classList.add('can-drag');
     bar.classList.add('top-bar-overflow');
   } else {
     bar.classList.remove('can-drag');
     bar.classList.remove('top-bar-overflow');
+    bar.classList.remove('dragging');
   }
+}
+
+// 07 顶栏滚动：点击切换顶栏拖动横移功能
+function toggleTopBarScroll() {
+  __topBarScrollEnabled = !__topBarScrollEnabled;
+  try { localStorage.setItem('pa_topbar_scroll', __topBarScrollEnabled ? 'on' : 'off'); } catch (e) {}
+  updateTopBarDragState();
+  var nav = document.getElementById('navTopBarScroll');
+  if (nav) nav.classList.toggle('ts-on', __topBarScrollEnabled);
+  showToast(__topBarScrollEnabled ? '顶栏滚动已开启（可拖动顶栏查看全部按钮）' : '顶栏滚动已关闭', 'info');
 }
 
 function _restoreStateFromSnapshot(snap) {
@@ -10713,6 +10730,9 @@ document.addEventListener('DOMContentLoaded', function() {
   setTimeout(updateUndoRedoButtons, 50);
   // 顶栏融合拖拽滚动（长按兜底 + 移动即时拖）
   enableTopBarDragScroll();
+  // 初始化「07 顶栏滚动」开关高亮（默认开启）
+  var navTB = document.getElementById('navTopBarScroll');
+  if (navTB) navTB.classList.toggle('ts-on', __topBarScrollEnabled);
   // 点击空白处关闭撤销/重做折叠菜单
   document.addEventListener('click', function(e) {
     var urMenu = document.getElementById('undoRedoMenu');
@@ -12911,6 +12931,7 @@ const __CLICK = {
   redoState: redoState,
   toggleUndoRedoMenu: toggleUndoRedoMenu,
   toggleMoreMenu: toggleMoreMenu,
+  toggleTopBarScroll: toggleTopBarScroll,
   confirmImport: confirmImport,
   confirmMerge: confirmMerge,
   confirmResetPassword: confirmResetPassword,
