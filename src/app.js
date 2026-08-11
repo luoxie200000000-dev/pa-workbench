@@ -6114,6 +6114,7 @@ function renderHomeworkRegister(container) {
         <button class="btn btn-outline" data-click="selectAllHw" data-click-args="[true]">全选</button>
         <button class="btn btn-outline" data-click="selectAllHw" data-click-args="[false]">反选</button>
         <button class="btn btn-outline" data-click="openBatchHwModal">批量标记</button>
+        <button class="btn btn-outline" data-click="clearHwReview">🧹 清空批阅</button>
         <button class="btn btn-primary" data-click="saveAllHomework">💾 保存全部</button>
       </div>
     </div>
@@ -6558,6 +6559,23 @@ function saveBatchReview() {
   });
   saveState();
   showToast('批阅已保存');
+  renderHomeworkTable();
+}
+
+async function clearHwReview() {
+  if (homeworkSelection.size === 0) { showToast('请先勾选学生（可点「全选」）', 'warn'); return; }
+  const ids = Array.from(homeworkSelection);
+  // 仅对需要批阅的状态生效（normal/excellent 自动隐藏批阅列，无需清空）
+  const targets = state.homeworkRecords.filter(r => ids.includes(r.id) && !isReviewHidden(r.status));
+  if (targets.length === 0) { showToast('所选学生均为正常/优秀完成，无批阅可清空', 'warn'); return; }
+  const ok = await appConfirm(`将清空 ${targets.length} 条作业记录的批阅评语，并重置为「待批改」。\n此操作不可恢复，确定继续吗？`, { danger: true });
+  if (!ok) return;
+  targets.forEach(r => {
+    r.review = '';
+    r.reviewStatus = 'pending';
+  });
+  saveState();
+  showToast(`已清空 ${targets.length} 条批阅`);
   renderHomeworkTable();
 }
 
