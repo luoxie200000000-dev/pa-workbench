@@ -5433,6 +5433,7 @@ function renderStudents(container) {
   clearLayerCache();
   const classFilter = state.studentClassFilter || '';
   const showStudents = classFilter ? state.students.filter(s => s.classId === classFilter) : state.students;
+  const batchMode = state._studentBatchMode === true;
   const layerMode = state.layerMode || 'class';
   const isScoreMode = layerMode === 'score';
   // 统计各层人数
@@ -5514,9 +5515,10 @@ function renderStudents(container) {
         <input type="file" id="studentUpload" accept=".csv" style="display:none" data-ev="change" data-ev-key="ev28">
         <button class="btn btn-success" data-click="openStudentEditor">➕ 学生</button>
         <button class="btn btn-outline" data-click="openClassManager">⚙️ 班级</button>
+        <button class="btn ${batchMode?'btn-primary':'btn-outline'}" data-click="toggleStudentBatchMode" style="margin-left:auto">${batchMode?'✓ 批量操作中':'☑ 批量操作'}</button>
       </div>
     </div>
-    <div class="flex-between gap-8" style="margin:8px 0 4px">
+    <div class="flex-between gap-8" style="margin:8px 0 4px;display:${batchMode?'flex':'none'}">
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;user-select:none">
         <input type="checkbox" id="studentSelectAll"> 全选本页
       </label>
@@ -5597,7 +5599,15 @@ function renderStudentGrid(students) {
     + '</div>';
   }).join('');
   grid.innerHTML = _studentHtml;
+  grid.classList.toggle('batch-mode', state._studentBatchMode === true);
   if (IS_M) renderStudentAlphaIndex();
+}
+
+// 切换学生档案「批量操作」模式（勾选框按需显示）
+function toggleStudentBatchMode() {
+  state._studentBatchMode = !(state._studentBatchMode === true);
+  saveState();
+  renderStudents(document.getElementById('contentArea'));
 }
 
 // ── 学生总库：手机端首字索引侧栏（微信/QQ 风格右侧索引）──
@@ -5855,18 +5865,50 @@ function switchStudentTaskView(view) {
 
 /* ---- 06-1 Task Info ---- */
 function renderTaskInfo(container) {
+  const showArchived = state._showArchivedTasks === true;
+  const archivedCount = state.studentTasks.filter(t => t.archived === true).length;
   container.innerHTML = `
     <div class="toolbar">
-      <div class="text-muted text-sm">点击任务展开/折叠答案，支持直接新建和编辑</div>
+      <div class="text-muted text-sm">点击任务展开/折叠答案，支持直接新建和编辑。标记「完成」的任务进入历史作业，作业登记数据完整保留。</div>
       <div class="flex-between gap-8">
-        <button class="btn btn-outline" data-click="downloadTaskInfoTemplate">⬇️ 模板</button>
-        <button class="btn btn-outline" data-click="__dcClickEl" data-click-args="[&quot;taskInfoUpload&quot;]">📤 上传</button>
-        <button class="btn btn-primary" data-click="openTaskInfoEditModal">+ 新建任务</button>
-        <input type="file" id="taskInfoUpload" accept=".csv" style="display:none" data-ev="change" data-ev-key="ev29">
+        <button class="btn btn-outline" data-click="${showArchived ? 'toggleShowArchivedTasks' : 'toggleShowArchivedTasks'}" style="${showArchived ? 'border-color:var(--success);color:var(--success)' : ''}">${showArchived ? '↩ 返回活动任务' : `📦 历史作业${archivedCount ? ' (' + archivedCount + ')' : ''}`}</button>
+        <div class="flex-between gap-8">
+          <button class="btn btn-outline" data-click="downloadTaskInfoTemplate">⬇️ 模板</button>
+          <button class="btn btn-outline" data-click="__dcClickEl" data-click-args="[&quot;taskInfoUpload&quot;]">📤 上传</button>
+          <button class="btn btn-primary" data-click="openTaskInfoEditModal">+ 新建任务</button>
+          <input type="file" id="taskInfoUpload" accept=".csv" style="display:none" data-ev="change" data-ev-key="ev29">
+        </div>
       </div>
     </div>
     <div id="taskInfoList"></div>
   `;
+  renderTaskInfoList();
+}
+
+// 切换「查看历史作业」/「返回活动任务」
+function toggleShowArchivedTasks() {
+  state._showArchivedTasks = !(state._showArchivedTasks === true);
+  saveState();
+  renderPage();
+}
+
+// 标记任务完成（归档为历史作业，保留作业登记数据）
+function archiveStudentTask(id) {
+  const t = state.studentTasks.find(x => x.id === id);
+  if (!t) return;
+  t.archived = true;
+  saveState();
+  showToast(`已归档为历史作业：${t.title}`);
+  renderTaskInfoList();
+}
+
+// 撤销完成（从历史作业恢复到活动任务）
+function unarchiveStudentTask(id) {
+  const t = state.studentTasks.find(x => x.id === id);
+  if (!t) return;
+  t.archived = false;
+  saveState();
+  showToast(`已恢复为活动任务：${t.title}`);
   renderTaskInfoList();
 }
 
@@ -5877,13 +5919,22 @@ function renderTaskInfoList() {
     el.innerHTML = '<div class="empty-state"><span class="emoji">📭</span>暂无作业任务，点击「新建任务」添加</div>';
     return;
   }
-  el.innerHTML = state.studentTasks.map(t => {
+  const showArchived = state._showArchivedTasks === true;
+  const list = state.studentTasks.filter(t => showArchived ? (t.archived === true) : (t.archived !== true));
+  if (list.length === 0) {
+    el.innerHTML = `<div class="empty-state"><span class="emoji">${showArchived ? '📦' : '📭'}</span>${showArchived ? '暂无历史作业' : '暂无活动作业任务，点击「新建任务」添加'}</div>`;
+    return;
+  }
+  el.innerHTML = list.map(t => {
     const images = t.answerImages || [];
     const hasAnswer = (t.answer && t.answer.trim()) || images.length > 0;
+    const actionBtns = showArchived
+      ? `<button class="btn-icon" data-click="unarchiveStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="恢复为活动任务">↩️</button>`
+      : `<button class="btn-icon" data-click="archiveStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="标记为完成（归档）">✅</button>`;
     return `
-    <div class="plan-item" style="cursor:pointer" data-click="toggleTaskAnswer" data-click-args="[&quot;${t.id}&quot;]">
+    <div class="plan-item ${showArchived ? 'plan-item-archived' : ''}" style="cursor:pointer" data-click="toggleTaskAnswer" data-click-args="[&quot;${t.id}&quot;]">
       <div class="plan-item-info">
-        <div class="plan-item-name">${escapeHtml(t.title)} ${hasAnswer?'<span style="font-size:11px;color:var(--danger)">🔑 含答案</span>':'<span style="font-size:11px;color:var(--text-muted)">无答案</span>'}</div>
+        <div class="plan-item-name">${escapeHtml(t.title)} ${hasAnswer?'<span style="font-size:11px;color:var(--danger)">🔑 含答案</span>':'<span style="font-size:11px;color:var(--text-muted)">无答案</span>'}${showArchived?' <span style="font-size:11px;color:var(--text-muted)">· 历史作业</span>':''}</div>
         <div class="plan-item-meta">班级：${escapeHtml(getTaskClassIds(t).join('、'))} | 布置日期：${escapeHtml(t.assignedDate)} | 截止日期：${escapeHtml(t.dueDate||'未设')}</div>
         <div class="plan-item-meta">作业内容：${escapeHtml(t.content)}</div>
         <div id="answer-${t.id}" class="text-sm" style="display:none;margin-top:8px;padding:12px;background:var(--bg-app);border-radius:var(--radius-sm);border:1px solid var(--border)">
@@ -5894,7 +5945,8 @@ function renderTaskInfoList() {
       </div>
       <div style="white-space:nowrap;display:flex;gap:4px">
         <button class="btn-icon" data-click="__dcStopOpenTaskInfo" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="编辑">✏️</button>
-        <button class="btn-icon" data-click="__dcStopDelStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="删除">🗑️</button>
+        ${actionBtns}
+        ${showArchived ? '' : `<button class="btn-icon" data-click="__dcStopDelStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="删除">🗑️</button>`}
       </div>
     </div>`;
   }).join('');
@@ -6022,12 +6074,48 @@ function saveTaskInfo(id) {
 }
 
 async function deleteStudentTask(id) {
-  saveState({pushUndo:true});
-  if (!(await appConfirm('确认删除此作业任务？', {danger:true}))) return;
-  state.studentTasks = state.studentTasks.filter(t => t.id !== id);
+  const t = state.studentTasks.find(x => x.id === id);
+  if (!t) return;
+  const related = state.homeworkRecords.filter(r => r.taskId === id);
+  if (related.length > 0) {
+    const choice = await showTaskDeleteChoiceModal(t, related.length);
+    if (choice === 'cancel') return;
+    saveState({pushUndo:true});
+    state.studentTasks = state.studentTasks.filter(x => x.id !== id);
+    if (choice === 'deleteRecords') {
+      state.homeworkRecords = state.homeworkRecords.filter(r => r.taskId !== id);
+    }
+  } else {
+    if (!(await appConfirm(`确认删除作业任务「${t.title}」？该任务下暂无作业登记数据。`, {danger:true}))) return;
+    saveState({pushUndo:true});
+    state.studentTasks = state.studentTasks.filter(x => x.id !== id);
+  }
   saveState();
   showToast('作业任务已删除');
   renderTaskInfoList();
+}
+
+// 删除任务时，选择是否一并删除关联作业登记数据
+let _taskDeleteResolver = null;
+function showTaskDeleteChoiceModal(task, count) {
+  return new Promise(resolve => {
+    _taskDeleteResolver = resolve;
+    openModal(`
+      <h3>删除作业任务：「${escapeHtml(task.title)}」</h3>
+      <p style="margin:8px 0;color:var(--text-muted);line-height:1.6">该任务下共有 <b style="color:var(--danger)">${count}</b> 条作业登记数据。删除任务时如何处理这些登记数据？</p>
+      <div class="modal-actions">
+        <button class="btn btn-outline" data-click="resolveTaskDelete" data-click-args="[&quot;cancel&quot;]">取消</button>
+        <button class="btn" style="background:var(--warning);color:#fff" data-click="resolveTaskDelete" data-click-args="[&quot;keepRecords&quot;]">仅删任务 · 保留登记</button>
+        <button class="btn btn-danger" data-click="resolveTaskDelete" data-click-args="[&quot;deleteRecords&quot;]">一并删除登记</button>
+      </div>
+    `);
+  });
+}
+function resolveTaskDelete(choice) {
+  const r = _taskDeleteResolver;
+  _taskDeleteResolver = null;
+  closeModal();
+  if (r) r(choice);
 }
 
 // Helper: get task's class list (supports both old classId string and new classIds array)
@@ -6623,6 +6711,14 @@ function openBatchHwModal() {
       </select>
     </div>
     <div class="form-group">
+      <label class="form-label">批阅状态</label>
+      <select class="form-select" id="batchHwReviewStatus">
+        <option value="keep">不修改</option>
+        <option value="pending">待批改</option>
+        <option value="reviewed">已处理</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label class="form-label">批阅评语（可选）</label>
       <textarea class="form-textarea" id="batchHwReview" placeholder="批量评语"></textarea>
     </div>
@@ -6636,16 +6732,22 @@ function openBatchHwModal() {
 function saveBatchHwStatus() {
   const status = document.getElementById('batchHwStatus').value;
   const review = document.getElementById('batchHwReview').value.trim();
+  const reviewStatusChoice = document.getElementById('batchHwReviewStatus')?.value || 'keep';
   homeworkSelection.forEach(id => {
     const r = state.homeworkRecords.find(x => x.id === id);
     if (r) {
       r.status = status;
       if (review) r.review = review;
-      // Auto-set review status based on homework status
-      if (isReviewLocked(status)) {
-        r.reviewStatus = 'pending';
-      } else if (isReviewHidden(status)) {
-        r.reviewStatus = 'reviewed';
+      if (reviewStatusChoice && reviewStatusChoice !== 'keep') {
+        // 手动指定批阅状态，优先于自动逻辑
+        r.reviewStatus = reviewStatusChoice;
+      } else {
+        // Auto-set review status based on homework status
+        if (isReviewLocked(status)) {
+          r.reviewStatus = 'pending';
+        } else if (isReviewHidden(status)) {
+          r.reviewStatus = 'reviewed';
+        }
       }
     }
   });
@@ -7320,8 +7422,12 @@ function renderDashboard(container) {
   }
   if (exam) recalculateRanks(exam);
 
-  const layerCounts = { A:0, B:0, C:0, D:0 };
-  scores.forEach(s => { const l = rankToLayer(s.classRank || 999); layerCounts[l]++; });
+  const isScoreLayer = state.layerMode === 'score';
+  const layerCounts = isScoreLayer ? { 'A+':0, 'A':0, 'B+':0, 'B':0, 'C+':0, 'C':0 } : { A:0, B:0, C:0, D:0 };
+  scores.forEach(s => {
+    const l = isScoreLayer ? scoreToLayer(s.score) : rankToLayer(s.classRank || 999);
+    if (layerCounts[l] !== undefined) layerCounts[l]++;
+  });
 
   // Progress/regression counts
   const progressCounts = { up:0, slightUp:0, same:0, slightDown:0, down:0 };
@@ -7444,8 +7550,8 @@ function renderDashboard(container) {
         ${renderHwStatusBars(hwStatusCounts)}
       </div>
       <div class="analysis-card">
-        <h3>🎯 各分层人数</h3>
-        ${renderLayerBars(layerCounts)}
+        <h3>🎯 各分层人数 <span style="font-size:12px;color:var(--text-muted);font-weight:400">（${isScoreLayer?'按成绩分数':'按考试班排'}）</span></h3>
+        ${renderLayerBars(layerCounts, isScoreLayer)}
       </div>
     </div>
 
@@ -7720,14 +7826,23 @@ function renderHwStatusBars(counts) {
   }).join('');
 }
 
-function renderLayerBars(counts) {
+function renderLayerBars(counts, isScoreMode) {
   const total = Object.values(counts).reduce((a,b)=>a+b,0);
-  const items = [
-    { label:'A层(1-15名)', count:counts.A, color:'var(--success)' },
-    { label:'B层(16-30名)', count:counts.B, color:'var(--info)' },
-    { label:'C层(31-45名)', count:counts.C, color:'var(--warning)' },
-    { label:'D层(46名+)', count:counts.D, color:'var(--danger)' }
-  ];
+  const items = isScoreMode
+    ? [
+        { label:'A+层(83-100分)', count:counts['A+'], color:'#1B5E20' },
+        { label:'A层(76-82分)', count:counts['A'], color:'#2E7D32' },
+        { label:'B+层(59-75分)', count:counts['B+'], color:'var(--info)' },
+        { label:'B层(45-58分)', count:counts['B'], color:'#E65100' },
+        { label:'C+层(30-44分)', count:counts['C+'], color:'var(--warning)' },
+        { label:'C层(<30分)', count:counts['C'], color:'var(--danger)' }
+      ]
+    : [
+        { label:'A层(1-15名)', count:counts.A, color:'var(--success)' },
+        { label:'B层(16-30名)', count:counts.B, color:'var(--info)' },
+        { label:'C层(31-45名)', count:counts.C, color:'var(--warning)' },
+        { label:'D层(46名+)', count:counts.D, color:'var(--danger)' }
+      ];
   return items.map(i => {
     const pct = total ? Math.round(i.count/total*100) : 0;
     return `<div class="bar-chart-row">
@@ -8538,15 +8653,60 @@ function renderScoreDistribution(dist) {
   return ranges.map(r => {
     const count = dist[r.key] || 0;
     const pct = total ? Math.round(count/total*100) : 0;
+    const clickable = count > 0
+      ? `style="cursor:pointer" data-click="showScoreRangeStudents" data-click-args="[&quot;${r.key}&quot;]" title="点击查看 ${r.label} 学生名单"`
+      : '';
     return `
       <div class="bar-chart-row">
-        <div class="bar-chart-label"><span>${r.label}</span><span>${count}人 (${pct}%)</span></div>
+        <div class="bar-chart-label"><span>${r.label}</span><span ${clickable}>${count}人 (${pct}%)</span></div>
         <div class="bar-chart-track"><div class="bar-chart-fill" style="width:${pct}%;background:${r.color}">${pct}%</div></div>
       </div>
     `;
   }).join('');
 }
 
+// 点击分数段查看该区间学生名单
+function showScoreRangeStudents(rangeKey) {
+  const layerKeyMap = { 'A+':'ap', 'A':'a', 'B+':'bp', 'B':'b', 'C+':'cp', 'C':'c' };
+  const rangeLabelMap = {
+    ap:'83-100分 (A+层)', a:'76-82分 (A层)', bp:'59-75分 (B+层)',
+    b:'45-58分 (B层)', cp:'30-44分 (C+层)', c:'30分以下 (C层)'
+  };
+  const exam = state._selectedExam || getExamList()[0] || '';
+  const classFilter = state._scoreClassFilter || '';
+  let scores = exam ? state.scores.filter(s => s.examName === exam) : state.scores.slice();
+  if (classFilter) scores = scores.filter(s => s.classId === classFilter);
+  const matched = scores.filter(s => {
+    const layer = scoreToLayer(s.score);
+    return layerKeyMap[layer] === rangeKey;
+  });
+  const title = rangeLabelMap[rangeKey] || '分数段';
+  const rows = matched
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .map(s => {
+      const stu = state.students.find(x => x.id === s.studentId);
+      return `<tr>
+        <td>${escapeHtml(stu ? stu.studentNo : (s.studentNo || '-'))}</td>
+        <td>${escapeHtml(stu ? stu.name : (s.name || '-'))}</td>
+        <td>${escapeHtml(s.classId || '-')}</td>
+        <td><strong>${s.score}</strong></td>
+        <td>${s.classRank || '-'}</td>
+        <td>${s.gradeRank || '-'}</td>
+      </tr>`;
+    }).join('');
+  openModal(`
+    <h3>📊 ${escapeHtml(title)} · ${escapeHtml(exam)} (${matched.length}人)</h3>
+    <div class="table-wrap" style="max-height:360px;overflow:auto">
+      <table class="task-table" style="width:100%">
+        <thead><tr><th>学号</th><th>姓名</th><th>班级</th><th>成绩</th><th>班排</th><th>级排</th></tr></thead>
+        <tbody>${matched.length > 0 ? rows : '<tr><td colspan="6" class="empty-state">暂无学生</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" data-click="closeModal">关闭</button>
+    </div>
+  `);
+}
 function downloadScoreTemplate() {
   const csv = '\ufeff学号,姓名,班级,成绩,考试名称,日期\n1001,张三,1班,85,第一章单元测,2026-09-10\n1002,李四,1班,92,第一章单元测,2026-09-10\n2001,王五,2班,78,第一章单元测,2026-09-10\n3001,赵六,3班,88,第一章单元测,2026-09-10\n';
   downloadFile(csv, '学生成绩模板.csv', 'text/csv');
@@ -12142,6 +12302,12 @@ var _exportMap = {
   toggleNotch: toggleNotch, closeActiveAndRefresh: closeActiveAndRefresh,
   setUiMode: setUiMode,
   toggleStudentTag: toggleStudentTag,
+  toggleStudentBatchMode: toggleStudentBatchMode,
+  toggleShowArchivedTasks: toggleShowArchivedTasks,
+  archiveStudentTask: archiveStudentTask,
+  unarchiveStudentTask: unarchiveStudentTask,
+  resolveTaskDelete: resolveTaskDelete,
+  showScoreRangeStudents: showScoreRangeStudents,
   saveStudentProfile: saveStudentProfile,
   downloadStudentTemplate: downloadStudentTemplate,
   handleStudentUpload: handleStudentUpload,
@@ -12502,6 +12668,12 @@ const __CLICK = {
   toggleMajorAnswer: toggleMajorAnswer,
   toggleReminder: toggleReminder,
   toggleStudentTag: toggleStudentTag,
+  toggleStudentBatchMode: toggleStudentBatchMode,
+  toggleShowArchivedTasks: toggleShowArchivedTasks,
+  archiveStudentTask: archiveStudentTask,
+  unarchiveStudentTask: unarchiveStudentTask,
+  resolveTaskDelete: resolveTaskDelete,
+  showScoreRangeStudents: showScoreRangeStudents,
   toggleTaskAnswer: toggleTaskAnswer,
   toggleThemePanel: toggleThemePanel,
   triggerPWAInstall: triggerPWAInstall,
