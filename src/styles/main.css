@@ -2660,6 +2660,47 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 .undo-redo-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .undo-redo-menu-item span:first-child { font-size: 15px; }
 
+/* 更多 折叠入口 + 内联横向展开菜单（收纳 状态/数据/主题，与撤销/重做折叠同机制） */
+.more-fold-wrap { display: inline-flex; flex-direction: row-reverse; align-items: center; gap: 6px; }
+.more-fold {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-body);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.more-fold:hover { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
+.more-fold[aria-expanded="true"] { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
+.more-menu {
+  display: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.more-menu:not([hidden]) { display: inline-flex; }
+.more-menu[hidden] { display: none; }
+.more-menu-item {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-body);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.more-menu-item:hover { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
+.more-menu-item span:first-child { font-size: 15px; }
+
 /* 顶栏可拖动光标：溢出时由 JS 加 .can-drag，拖动中加 .dragging */
 .top-bar.can-drag { cursor: grab; }
 .top-bar.can-drag.dragging { cursor: grabbing; }
@@ -2682,4 +2723,30 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
   .top-bar-right > * { flex-shrink: 0; }
   .undo-redo-inline { display: none !important; }
   .undo-redo-fold { display: inline-flex !important; }
+  /* 窄屏：状态/数据/主题 收纳进「更多」折叠 */
+  .status-btn[data-click="showRuntimeStatus"],
+  .status-btn[data-click="openDataManager"],
+  .theme-btn { display: none !important; }
+  .more-fold { display: inline-flex !important; }
 }
+
+/* 手机模式（.ui-mobile）：与 ≤1050px 一致的收纳行为——撤销/重做折叠 + 顶栏可横拖
+   关键：窄屏行为不能只卡在视口宽度媒体查询上，手机模式要单独生效 */
+.ui-mobile .top-bar-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.ui-mobile .top-bar-right::-webkit-scrollbar { height: 4px; }
+.ui-mobile .top-bar-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.ui-mobile .top-bar-right::-webkit-scrollbar-track { background: transparent; }
+.ui-mobile .top-bar-right > * { flex-shrink: 0; }
+.ui-mobile .undo-redo-inline { display: none !important; }
+.ui-mobile .undo-redo-fold { display: inline-flex !important; }
+/* 手机模式：状态/数据/主题 收进「更多」折叠（原仅 display:none 隐藏，现改为可折叠访问） */
+.ui-mobile .theme-btn { display: none !important; }
+.ui-mobile .more-fold { display: inline-flex !important; }

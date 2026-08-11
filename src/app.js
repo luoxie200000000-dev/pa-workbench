@@ -471,6 +471,7 @@ function undoState() {
   // 重渲染当前页
   try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('撤销后渲染失败:', e); }
   closeUndoRedoMenu();
+  closeMoreMenu();
   showToast('已撤销 (剩余 ' + state._undoStack.length + ' 步)', 'success');
 }
 
@@ -485,6 +486,7 @@ function redoState() {
   updateUndoRedoButtons();
   try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('重做后渲染失败:', e); }
   closeUndoRedoMenu();
+  closeMoreMenu();
   showToast('已重做', 'success');
 }
 
@@ -504,6 +506,29 @@ function toggleUndoRedoMenu() {
 function closeUndoRedoMenu() {
   var menu = document.getElementById('undoRedoMenu');
   var btn = document.getElementById('btnUndoRedoFold');
+  if (menu && !menu.hasAttribute('hidden')) menu.setAttribute('hidden', '');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+// 更多折叠（状态/数据/主题）——与撤销/重做折叠同机制
+function toggleMoreMenu() {
+  var menu = document.getElementById('moreMenu');
+  var btn = document.getElementById('btnMoreFold');
+  if (!menu || !btn) return;
+  // 打开「更多」时先收起「撤销/重做」，避免两个菜单同时展开
+  closeUndoRedoMenu();
+  if (menu.hasAttribute('hidden')) {
+    menu.removeAttribute('hidden');
+    btn.setAttribute('aria-expanded', 'true');
+  } else {
+    menu.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function closeMoreMenu() {
+  var menu = document.getElementById('moreMenu');
+  var btn = document.getElementById('btnMoreFold');
   if (menu && !menu.hasAttribute('hidden')) menu.setAttribute('hidden', '');
   if (btn) btn.setAttribute('aria-expanded', 'false');
 }
@@ -557,12 +582,17 @@ function enableTopBarDragScroll() {
   bar.addEventListener('touchstart', onDown, { passive: true });
   bar.addEventListener('touchmove', onMove, { passive: false });
   bar.addEventListener('touchend', onUp);
-  function updateCursor() {
-    if (scroller.scrollWidth > scroller.clientWidth + 1) bar.classList.add('can-drag');
-    else bar.classList.remove('can-drag');
-  }
-  updateCursor();
-  window.addEventListener('resize', updateCursor);
+  updateTopBarDragState();
+  window.addEventListener('resize', updateTopBarDragState);
+}
+
+// 重新计算顶栏是否可拖动（溢出时加 .can-drag 光标）；切换手机/桌面模式后也要调用
+function updateTopBarDragState() {
+  var bar = document.querySelector('.top-bar');
+  var scroller = document.querySelector('.top-bar-right');
+  if (!bar || !scroller) return;
+  if (scroller.scrollWidth > scroller.clientWidth + 1) bar.classList.add('can-drag');
+  else bar.classList.remove('can-drag');
 }
 
 function _restoreStateFromSnapshot(snap) {
@@ -2835,6 +2865,7 @@ function applyUiMode(opts) {
   updateUiModeBtn();
   updateMobileFab();
   if (opts.rerender && (mobile !== wasMobile)) renderPage();
+  updateTopBarDragState();
 }
 function cycleUiMode() {
   state.uiMode = state.uiMode === 'mobile' ? 'desktop' : 'mobile';
@@ -10679,11 +10710,17 @@ document.addEventListener('DOMContentLoaded', function() {
   enableTopBarDragScroll();
   // 点击空白处关闭撤销/重做折叠菜单
   document.addEventListener('click', function(e) {
-    var menu = document.getElementById('undoRedoMenu');
-    if (!menu || menu.hasAttribute('hidden')) return;
-    var foldBtn = document.getElementById('btnUndoRedoFold');
-    if (foldBtn && (foldBtn.contains(e.target) || menu.contains(e.target))) return;
-    closeUndoRedoMenu();
+    var urMenu = document.getElementById('undoRedoMenu');
+    if (urMenu && !urMenu.hasAttribute('hidden')) {
+      var urBtn = document.getElementById('btnUndoRedoFold');
+      if (!(urBtn && (urBtn.contains(e.target) || urMenu.contains(e.target)))) closeUndoRedoMenu();
+    }
+    // 关闭「更多」折叠：点菜单内项或空白都收起；点折叠按钮本身由 toggleMoreMenu 处理
+    var mMenu = document.getElementById('moreMenu');
+    if (mMenu && !mMenu.hasAttribute('hidden')) {
+      var mBtn = document.getElementById('btnMoreFold');
+      if (!(mBtn && mBtn.contains(e.target))) closeMoreMenu();
+    }
   });
   // Mobile sidebar toggle
   document.getElementById('mobileMenuBtn').addEventListener('click', function() {
@@ -12868,6 +12905,7 @@ const __CLICK = {
   undoState: undoState,
   redoState: redoState,
   toggleUndoRedoMenu: toggleUndoRedoMenu,
+  toggleMoreMenu: toggleMoreMenu,
   confirmImport: confirmImport,
   confirmMerge: confirmMerge,
   confirmResetPassword: confirmResetPassword,

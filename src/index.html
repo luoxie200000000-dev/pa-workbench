@@ -122,6 +122,16 @@
         <button class="theme-btn" data-click="toggleThemePanel" title="主题设置">
           <span style="font-size:14px">🎨</span><span>主题</span>
         </button>
+        <span class="more-fold-wrap" id="moreFoldWrap">
+          <button class="more-fold" id="btnMoreFold" data-click="toggleMoreMenu" title="更多（状态/数据/主题）" aria-haspopup="true" aria-expanded="false">
+            <span style="font-size:16px;line-height:1">⋯</span>
+          </button>
+          <div class="more-menu" id="moreMenu" role="group" hidden>
+            <button class="more-menu-item" data-click="showRuntimeStatus"><span>📊</span><span>状态</span></button>
+            <button class="more-menu-item" data-click="openDataManager"><span>📦</span><span>数据</span></button>
+            <button class="more-menu-item" data-click="toggleThemePanel"><span>🎨</span><span>主题</span></button>
+          </div>
+        </span>
         <button class="top-bar-more-btn" id="topBarMoreBtn" data-click="toggleTopBarMore" title="展开更多">⋯</button>
         <button class="mobile-overflow-btn" id="mobileOverflowBtn" data-click="openMobileOverflow" title="更多操作" aria-label="更多操作">⋯</button>
         <div class="real-time-clock" id="realTimeClock">
