@@ -586,13 +586,18 @@ function enableTopBarDragScroll() {
   window.addEventListener('resize', updateTopBarDragState);
 }
 
-// 重新计算顶栏是否可拖动（溢出时加 .can-drag 光标）；切换手机/桌面模式后也要调用
+// 重新计算顶栏是否可拖动（溢出时加 .can-drag 光标 + .top-bar-overflow 触发折叠/收纳）；切换手机/桌面模式后也要调用
 function updateTopBarDragState() {
   var bar = document.querySelector('.top-bar');
   var scroller = document.querySelector('.top-bar-right');
   if (!bar || !scroller) return;
-  if (scroller.scrollWidth > scroller.clientWidth + 1) bar.classList.add('can-drag');
-  else bar.classList.remove('can-drag');
+  if (scroller.scrollWidth > scroller.clientWidth + 1) {
+    bar.classList.add('can-drag');
+    bar.classList.add('top-bar-overflow');
+  } else {
+    bar.classList.remove('can-drag');
+    bar.classList.remove('top-bar-overflow');
+  }
 }
 
 function _restoreStateFromSnapshot(snap) {

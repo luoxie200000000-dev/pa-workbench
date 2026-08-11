@@ -2750,3 +2750,26 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 /* 手机模式：状态/数据/主题 收进「更多」折叠（原仅 display:none 隐藏，现改为可折叠访问） */
 .ui-mobile .theme-btn { display: none !important; }
 .ui-mobile .more-fold { display: inline-flex !important; }
+
+/* 顶栏溢出（任意视口宽度均生效，JS 检测 scrollWidth>clientWidth 后加 .top-bar-overflow）：
+   撤销/重做折叠为 ⋮、状态/数据/主题收纳进「更多」、顶栏可横拖——不依赖视口宽度媒体查询，
+   解决手机打开桌面模式时窗口宽度>1050 导致折叠/拖拽失效的问题 */
+.top-bar.top-bar-overflow .top-bar-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-wrap: nowrap;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.top-bar.top-bar-overflow .top-bar-right::-webkit-scrollbar { height: 4px; }
+.top-bar.top-bar-overflow .top-bar-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.top-bar.top-bar-overflow .top-bar-right::-webkit-scrollbar-track { background: transparent; }
+.top-bar.top-bar-overflow .top-bar-right > * { flex-shrink: 0; }
+.top-bar.top-bar-overflow .undo-redo-inline { display: none !important; }
+.top-bar.top-bar-overflow .undo-redo-fold { display: inline-flex !important; }
+.top-bar.top-bar-overflow .status-btn[data-click="showRuntimeStatus"],
+.top-bar.top-bar-overflow .status-btn[data-click="openDataManager"],
+.top-bar.top-bar-overflow .theme-btn { display: none !important; }
+.top-bar.top-bar-overflow .more-fold { display: inline-flex !important; }
