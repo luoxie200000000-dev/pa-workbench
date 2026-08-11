@@ -2617,57 +2617,17 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
   background: var(--bg-hover, #f0f3f7); border-color: var(--primary);
 }
 
-/* 撤销/重做 折叠入口 + 下拉菜单（小窗口收纳两个按钮） */
-.undo-redo-fold-wrap { position: relative; display: inline-flex; }
-.undo-redo-fold {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 4px 10px;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--text-body);
-  display: none;
-  align-items: center;
-  justify-content: center;
-}
-.undo-redo-fold:hover { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
-.undo-redo-fold[aria-expanded="true"] { background: var(--bg-hover, #f0f3f7); border-color: var(--primary); }
-
-.undo-redo-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  background: var(--bg-card, #fff);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
-  min-width: 150px;
-  padding: 6px 0;
-  z-index: 1200;
-  display: flex;
-  flex-direction: column;
-}
-.undo-redo-menu[hidden] { display: none; }
-.undo-redo-menu-item {
-  background: transparent;
-  border: none;
-  padding: 9px 16px;
-  text-align: left;
-  cursor: pointer;
-  font-size: 13px;
-  color: var(--text-body);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.undo-redo-menu-item:hover:not(:disabled) { background: var(--bg-hover, #f0f3f7); }
-.undo-redo-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
-.undo-redo-menu-item span:first-child { font-size: 15px; }
-
-/* ≤1050px：隐藏 inline 撤销/重做，显示折叠入口 */
+/* ≤1050px：顶栏右侧按钮过多时支持横向滚动，避免挤压成竖排 */
 @media (max-width: 1050px) {
-  .undo-redo-inline { display: none !important; }
-  .undo-redo-fold { display: inline-flex !important; }
+  .top-bar-right {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .top-bar-right::-webkit-scrollbar { height: 4px; }
+  .top-bar-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .top-bar-right::-webkit-scrollbar-track { background: transparent; }
+  .top-bar-right > * { flex-shrink: 0; }
 }

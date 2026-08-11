@@ -450,31 +450,6 @@ function updateUndoRedoButtons() {
     btnRedo.disabled = !canRedo();
     btnRedo.title = canRedo() ? '重做 (Ctrl+Y，共 ' + state._redoStack.length + '/' + UNDO_LIMIT + ' 步)' : '无可重做操作';
   }
-  // 同步折叠菜单里的撤销/重做项
-  var mUndo = document.getElementById('menuItemUndo');
-  var mRedo = document.getElementById('menuItemRedo');
-  if (mUndo) { mUndo.disabled = !canUndo(); mUndo.title = btnUndo ? btnUndo.title : ''; }
-  if (mRedo) { mRedo.disabled = !canRedo(); mRedo.title = btnRedo ? btnRedo.title : ''; }
-}
-
-function toggleUndoRedoMenu() {
-  var menu = document.getElementById('undoRedoMenu');
-  var btn = document.getElementById('btnUndoRedoFold');
-  if (!menu || !btn) return;
-  if (menu.hasAttribute('hidden')) {
-    menu.removeAttribute('hidden');
-    btn.setAttribute('aria-expanded', 'true');
-  } else {
-    menu.setAttribute('hidden', '');
-    btn.setAttribute('aria-expanded', 'false');
-  }
-}
-
-function closeUndoRedoMenu() {
-  var menu = document.getElementById('undoRedoMenu');
-  var btn = document.getElementById('btnUndoRedoFold');
-  if (menu && !menu.hasAttribute('hidden')) menu.setAttribute('hidden', '');
-  if (btn) btn.setAttribute('aria-expanded', 'false');
 }
 
 function undoState() {
@@ -491,7 +466,6 @@ function undoState() {
   // 重渲染当前页
   try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('撤销后渲染失败:', e); }
   showToast('已撤销 (剩余 ' + state._undoStack.length + ' 步)', 'success');
-  closeUndoRedoMenu();
 }
 
 function redoState() {
@@ -505,7 +479,6 @@ function redoState() {
   updateUndoRedoButtons();
   try { if (typeof renderPage === 'function') renderPage(); } catch(e) { console.warn('重做后渲染失败:', e); }
   showToast('已重做', 'success');
-  closeUndoRedoMenu();
 }
 
 function _restoreStateFromSnapshot(snap) {
@@ -10614,14 +10587,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undoState(); }
     else if ((k === 'y') || (k === 'z' && e.shiftKey)) { e.preventDefault(); redoState(); }
   });
-  // 点击空白处关闭撤销/重做折叠菜单
-  document.addEventListener('click', function(e) {
-    var menu = document.getElementById('undoRedoMenu');
-    if (!menu || menu.hasAttribute('hidden')) return;
-    var foldBtn = document.getElementById('btnUndoRedoFold');
-    if (foldBtn && (foldBtn.contains(e.target) || menu.contains(e.target))) return;
-    closeUndoRedoMenu();
-  });
   // 初始化撤销栈 + 按钮态
   if (!state._undoStack) state._undoStack = [];
   if (!state._redoStack) state._redoStack = [];
@@ -12808,7 +12773,6 @@ const __CLICK = {
   commitSave: commitSave,
   undoState: undoState,
   redoState: redoState,
-  toggleUndoRedoMenu: toggleUndoRedoMenu,
   confirmImport: confirmImport,
   confirmMerge: confirmMerge,
   confirmResetPassword: confirmResetPassword,
