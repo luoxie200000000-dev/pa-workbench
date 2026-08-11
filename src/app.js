@@ -540,7 +540,9 @@ function enableTopBarDragScroll() {
     isDown = false;
     clearTimeout(longPressTimer);
     bar.classList.remove('dragging');
-    if (moved || longPressed) {
+    // 仅在真正拖动过(moved)时吞掉紧随其后的 click，避免误触按钮；
+    // longPressed 但没移动（只是按住没拖）时不要吞点击，否则下次点按钮会失效
+    if (moved) {
       var capture = function(ev) {
         ev.stopPropagation();
         if (ev.cancelable) ev.preventDefault();
