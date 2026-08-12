@@ -13199,9 +13199,8 @@ function __dcSwitchSyncTab(args, e, el) {
   window._cloudSyncMobileTab = tab;
   updateSyncModal();
 }
-function toggleSyncSection(args, e, el) {
-  // 仅作用于桌面端（手机 tab 模式下没有 .sync-section），传入 'up' | 'dl'
-  var key = args && args[0];
+function toggleSyncSection(key, e, el) {
+  // 仅作用于桌面端（手机 tab 模式下没有 .sync-section），由 __delegateClick 经 apply 展开传入单值 'up' | 'dl'
   if (key !== 'up' && key !== 'dl') return;
   var storageKey = key === 'up' ? 'cloudSyncUploadCollapsed' : 'cloudSyncDownloadCollapsed';
   var collapsed = localStorage.getItem(storageKey) === '1';
@@ -13212,6 +13211,7 @@ function toggleSyncSection(args, e, el) {
   if (body) body.style.display = collapsed ? 'none' : '';
   if (arrow) arrow.textContent = collapsed ? '\u25B6' : '\u25BC';
   if (el) el.setAttribute('aria-expanded', String(!collapsed));
+  else if (arrow && arrow.parentElement) arrow.parentElement.setAttribute('aria-expanded', String(!collapsed));
   if (window.showToast) showToast(collapsed ? (key === 'up' ? '自动上传栏目已收起' : '自动下载栏目已收起') : (key === 'up' ? '自动上传栏目已展开' : '自动下载栏目已展开'));
 }
 function closeMobileSubnav() {
