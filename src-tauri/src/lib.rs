@@ -655,8 +655,7 @@ fn sanitize_name(name: &str) -> Result<String, String> {
         return Err("名称不能为空".to_string());
     }
     if n == "." || n == ".."
-        || n.contains("..") || n.contains('/') || n.contains('\\')
-        || n.contains('\\') {
+        || n.contains("..") || n.contains('/') || n.contains('\\') {
         return Err("名称包含非法字符".to_string());
     }
     Ok(n.to_string())
@@ -727,7 +726,7 @@ fn folder_create(app: tauri::AppHandle, rel_path: String, name: String) -> Resul
 fn item_rename(app: tauri::AppHandle, rel_path: String, old_name: String, new_name: String) -> Result<(), String> {
     let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
-    let src = parent.join(&old_name);
+    let src = parent.join(sanitize_name(&old_name)?);
     let dst = parent.join(sanitize_name(&new_name)?);
     if !src.exists() { return Err("源项目不存在".to_string()); }
     if dst.exists() { return Err("目标名称已存在".to_string()); }
@@ -739,7 +738,7 @@ fn item_rename(app: tauri::AppHandle, rel_path: String, old_name: String, new_na
 fn item_delete(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
     let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
-    let target = parent.join(&name);
+    let target = parent.join(sanitize_name(&name)?);
     if !target.exists() { return Err("目标不存在".to_string()); }
     if target.is_dir() { fs::remove_dir_all(&target) } else { fs::remove_file(&target) }
         .map_err(|e| format!("删除失败: {}", e))?;
@@ -752,12 +751,18 @@ fn item_delete_many(app: tauri::AppHandle, rel_path: String, names: Vec<String>)
     let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let mut count: u32 = 0;
+    let mut failed: Vec<String> = Vec::new();
     for name in names {
-        let target = parent.join(&name);
+        let target = parent.join(sanitize_name(&name)?);
         if !target.exists() { continue; }
-        if target.is_dir() { fs::remove_dir_all(&target) } else { fs::remove_file(&target) }
-            .map_err(|e| format!("删除「{}」失败: {}", name, e))?;
-        count += 1;
+        let res = if target.is_dir() { fs::remove_dir_all(&target) } else { fs::remove_file(&target) };
+        match res {
+            Ok(_) => count += 1,
+            Err(e) => failed.push(format!("删除「{}」失败: {}", name, e)),
+        }
+    }
+    if !failed.is_empty() {
+        return Err(failed.join("；"));
     }
     Ok(count)
 }
@@ -767,6 +772,7 @@ fn item_move(app: tauri::AppHandle, rel_src: String, name: String, rel_dst: Stri
     let root = folders_root_static(&app)?;
     let src_parent = resolve_in_folders(&root, &rel_src)?;
     let dst_parent = resolve_in_folders(&root, &rel_dst)?;
+    let name = sanitize_name(&name)?;
     let src = src_parent.join(&name);
     let dst = dst_parent.join(&name);
     if !src.exists() { return Err("源项目不存在".to_string()); }
@@ -817,6 +823,7 @@ fn item_copy(app: tauri::AppHandle, rel_src: String, name: String, rel_dst: Stri
     let root = folders_root_static(&app)?;
     let src_parent = resolve_in_folders(&root, &rel_src)?;
     let dst_parent = resolve_in_folders(&root, &rel_dst)?;
+    let name = sanitize_name(&name)?;
     let src = src_parent.join(&name);
     if !src.exists() { return Err("源项目不存在".to_string()); }
     // 防穿越：不能把文件夹复制到自身内部（会造成无限递归）
@@ -894,7 +901,7 @@ fn open_path_default(path: &str) -> Result<(), String> {
 fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
     let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
-    let target = parent.join(&name);
+    let target = parent.join(sanitize_name(&name)?);
     if !target.is_file() { return Err("文件不存在".to_string()); }
     let path_str = target.to_string_lossy().to_string();
     open_path_default(&path_str)
@@ -903,16 +910,14 @@ fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<()
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
-    use tauri_plugin_shell::ShellExt;
+    use tauri_plugin_opener::OpenerExt;
     let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
-    let target = parent.join(&name);
+    let target = parent.join(sanitize_name(&name)?);
     if !target.is_file() { return Err("文件不存在".to_string()); }
     let path_str = target.to_string_lossy().to_string();
     // 移动端通过系统 Intent 调起已安装应用打开文件（Word / PDF 等）。
-    // 注：Android 对应用私有目录有访问限制，若真机打不开需在 Tauri 侧做
-    // FileProvider / 缓存拷贝适配（待真机验证后迭代）。
-    app.shell().open(path_str, None).map_err(|e| format!("打开失败: {}", e))
+    app.opener().open_path(path_str, None).map_err(|e| format!("打开失败: {}", e))
 }
 
 // Android 专用：dialog 选中的文件是 content:// URI，std::fs 读不了；
@@ -927,7 +932,7 @@ fn import_file_from_uri(app: tauri::AppHandle, uri: String, name: String, rel_ds
     let root = folders_root_static(&app)?;
     let dst_dir = resolve_in_folders(&root, &rel_dst)?;
     std::fs::create_dir_all(&dst_dir).map_err(|e| format!("创建目标目录失败: {}", e))?;
-    let dst = unique_copy_name(&dst_dir, &name);
+    let dst = unique_copy_name(&dst_dir, &sanitize_name(&name)?);
     std::fs::write(&dst, &bytes).map_err(|e| format!("写入失败: {}", e))?;
     Ok(1)
 }

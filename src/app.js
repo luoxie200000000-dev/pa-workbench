@@ -3476,7 +3476,7 @@ async function bulkDeleteSelected() {
   if (!confirm('确定删除选中的 ' + names.length + ' 个项目？此操作不可撤销。')) return;
   try {
     var r = await __invoke('item_delete_many', { relPath: _folderRelPath, names: names });
-    showToast('已删除 ' + ((r && r.count) || 0) + ' 个文件');
+    showToast('已删除 ' + (typeof r === 'number' ? r : ((r && r.count) || 0)) + ' 个文件');
     clearSelection();
     await refreshFolderList();
   } catch (err) {
