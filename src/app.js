@@ -6038,9 +6038,15 @@ function renderTaskInfo(container) {
         </div>
       </div>
     </div>
-    <div class="view-tabs" style="margin:14px 0;flex-wrap:wrap">
-      <div class="view-tab ${!state.currentTaskClass ? 'active' : ''}" data-click="switchTaskClass" data-click-args="${escapeAttr(JSON.stringify(['__all__']))}">全部班级</div>
-      ${getClasses().map(c => `<div class="view-tab ${state.currentTaskClass === c ? 'active' : ''}" data-click="switchTaskClass" data-click-args="${escapeAttr(JSON.stringify([c]))}">${escapeHtml(c)}</div>`).join('')}
+    <div class="flex-between gap-8" style="margin:10px 0 12px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="text-sm text-muted">📚 按班级筛选：</span>
+        <select class="form-select" id="taskInfoClassFilter" data-ev="change" data-ev-key="ev72" style="width:140px">
+          <option value="" ${!state.currentTaskClass ? 'selected' : ''}>全部班级</option>
+          ${getClasses().map(c => `<option value="${escapeAttr(c)}" ${state.currentTaskClass===c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+        </select>
+      </div>
+      <span class="text-sm text-muted" id="taskInfoClassHint">${state.currentTaskClass ? '当前仅显示 ' + escapeHtml(state.currentTaskClass) + '（含跨班任务 🌐）' : '当前显示全部班级'}</span>
     </div>
     <div id="taskInfoList"></div>
   `;
@@ -6055,8 +6061,13 @@ function toggleShowArchivedTasks() {
 }
 
 // 任务信息按班级筛选切换（与聊天框的 switchChatClass 一致：全部班级 + 各班，跨班任务在各相关班级均出现）
+// 接受 value：'' / '__all__' / null → 全部；'1班'/'2班'/... → 具体班级
 function switchTaskClass(cls) {
-  state.currentTaskClass = (cls === '__all__') ? null : cls;
+  if (cls === '' || cls === null || cls === undefined || cls === '__all__') {
+    state.currentTaskClass = null;
+  } else {
+    state.currentTaskClass = cls;
+  }
   saveState();
   const container = document.getElementById('studentTaskContainer');
   if (container) renderTaskInfo(container);
@@ -13514,6 +13525,7 @@ const __EV = {
     saveState();
     updateSyncModal();
   },
+  ev72: function ev72(el, e) { var event = e; switchTaskClass(this.value); },
   evRowMenu: evRowMenu,
 
   ev1: function ev1(el, e) { var event = e; state.cloudAutoSync=this.checked;saveState() },
