@@ -3297,7 +3297,8 @@ async function runFolderAction(action, name, isDir) {
           var nm = uri.split('/').pop() || ('文件_' + Date.now());
           try { nm = decodeURIComponent(nm); } catch (e) {}
           var r = await __invoke('import_file_from_uri', { uri: uri, name: nm, relDst: _folderRelPath });
-          total += (r && r.count) || 0;
+          // 后端返回 u32（number），兼容历史可能的 {count} 形态
+          total += (typeof r === 'number' ? r : ((r && r.count) || 0));
         } catch (e) {
           showToast('导入失败：' + (typeof e === 'string' ? e : (e && e.message ? e.message : String(e))), 'warn');
         }
