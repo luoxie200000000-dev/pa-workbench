@@ -6038,6 +6038,10 @@ function renderTaskInfo(container) {
         </div>
       </div>
     </div>
+    <div class="view-tabs" style="margin:14px 0;flex-wrap:wrap">
+      <div class="view-tab ${!state.currentTaskClass ? 'active' : ''}" data-click="switchTaskClass" data-click-args="${escapeAttr(JSON.stringify(['__all__']))}">全部班级</div>
+      ${getClasses().map(c => `<div class="view-tab ${state.currentTaskClass === c ? 'active' : ''}" data-click="switchTaskClass" data-click-args="${escapeAttr(JSON.stringify([c]))}">${escapeHtml(c)}</div>`).join('')}
+    </div>
     <div id="taskInfoList"></div>
   `;
   renderTaskInfoList();
@@ -6048,6 +6052,15 @@ function toggleShowArchivedTasks() {
   state._showArchivedTasks = !(state._showArchivedTasks === true);
   saveState();
   renderPage();
+}
+
+// 任务信息按班级筛选切换（与聊天框的 switchChatClass 一致：全部班级 + 各班，跨班任务在各相关班级均出现）
+function switchTaskClass(cls) {
+  state.currentTaskClass = (cls === '__all__') ? null : cls;
+  saveState();
+  const container = document.getElementById('studentTaskContainer');
+  if (container) renderTaskInfo(container);
+  else renderPage();
 }
 
 // 标记任务完成（归档为历史作业，保留作业登记数据）
@@ -6078,7 +6091,12 @@ function renderTaskInfoList() {
     return;
   }
   const showArchived = state._showArchivedTasks === true;
-  const list = state.studentTasks.filter(t => showArchived ? (t.archived === true) : (t.archived !== true));
+  const curClass = state.currentTaskClass;
+  const list = state.studentTasks.filter(t => {
+    if (showArchived ? (t.archived !== true) : (t.archived === true)) return false;
+    if (curClass && !isTaskForClass(t, curClass)) return false;
+    return true;
+  });
   if (list.length === 0) {
     el.innerHTML = `<div class="empty-state"><span class="emoji">${showArchived ? '📦' : '📭'}</span>${showArchived ? '暂无历史作业' : '暂无活动作业任务，点击「新建任务」添加'}</div>`;
     return;
@@ -6086,13 +6104,14 @@ function renderTaskInfoList() {
   el.innerHTML = list.map(t => {
     const images = t.answerImages || [];
     const hasAnswer = (t.answer && t.answer.trim()) || images.length > 0;
+    const crossClass = getTaskClassIds(t).length > 1;
     const actionBtns = showArchived
       ? `<button class="btn-icon" data-click="unarchiveStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="恢复为活动任务">↩️</button>`
       : `<button class="btn-icon" data-click="archiveStudentTask" data-click-args="${escapeAttr(JSON.stringify([t.id]))}" title="标记为完成（归档）">✅</button>`;
     return `
     <div class="plan-item ${showArchived ? 'plan-item-archived' : ''}" style="cursor:pointer" data-click="toggleTaskAnswer" data-click-args="[&quot;${t.id}&quot;]">
       <div class="plan-item-info">
-        <div class="plan-item-name">${escapeHtml(t.title)} ${hasAnswer?'<span style="font-size:11px;color:var(--danger)">🔑 含答案</span>':'<span style="font-size:11px;color:var(--text-muted)">无答案</span>'}${showArchived?' <span style="font-size:11px;color:var(--text-muted)">· 历史作业</span>':''}</div>
+        <div class="plan-item-name">${escapeHtml(t.title)} ${hasAnswer?'<span style="font-size:11px;color:var(--danger)">🔑 含答案</span>':'<span style="font-size:11px;color:var(--text-muted)">无答案</span>'}${showArchived?' <span style="font-size:11px;color:var(--text-muted)">· 历史作业</span>':''}${crossClass?' <span class="cc-tag">🌐跨班</span>':''}</div>
         <div class="plan-item-meta">班级：${escapeHtml(getTaskClassIds(t).join('、'))} | 布置日期：${escapeHtml(t.assignedDate)} | 截止日期：${escapeHtml(t.dueDate||'未设')}</div>
         <div class="plan-item-meta">作业内容：${escapeHtml(t.content)}</div>
         <div id="answer-${t.id}" class="text-sm" style="display:none;margin-top:8px;padding:12px;background:var(--bg-app);border-radius:var(--radius-sm);border:1px solid var(--border)">
@@ -6119,7 +6138,7 @@ function openTaskInfoEditModal(id) {
   const t = id ? state.studentTasks.find(x => x.id === id) : null;
   if (!t) _pendingTaskImages = []; // 新建任务时清空待上传图片，防止上次残留
   const images = t ? (t.answerImages || []) : [];
-  const taskClasses = t ? getTaskClassIds(t) : [];
+  const taskClasses = t ? getTaskClassIds(t) : (state.currentTaskClass ? [state.currentTaskClass] : []);
   openModal(`
     <h3>${t?'编辑作业任务':'新建作业任务'}</h3>
     <div class="form-group">
@@ -12730,6 +12749,7 @@ var _exportMap = {
   openClassManager: openClassManager,
   // 学生任务
   switchStudentTaskView: switchStudentTaskView,
+  switchTaskClass: switchTaskClass,
   toggleTaskAnswer: toggleTaskAnswer,
   openTaskInfoEditModal: openTaskInfoEditModal,
   handleTaskImageUpload: handleTaskImageUpload,
@@ -13071,6 +13091,7 @@ const __CLICK = {
   switchLayerMode: switchLayerMode,
   switchScheduleView: switchScheduleView,
   switchStudentTaskView: switchStudentTaskView,
+  switchTaskClass: switchTaskClass,
   switchTaskView: switchTaskView,
   syncProgressFromSchedule: syncProgressFromSchedule,
   teacherReply: teacherReply,
