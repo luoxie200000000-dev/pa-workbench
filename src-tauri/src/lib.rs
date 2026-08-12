@@ -27,16 +27,26 @@ static ALLOW_EXIT: AtomicBool = AtomicBool::new(false);
 
 // ── Data directory helpers ─────────────────────────────────
 
-fn get_data_dir() -> Option<PathBuf> {
-    let exe_path = std::env::current_exe().ok()?;
-    let exe_dir = exe_path.parent()?;
-    let data_dir = exe_dir.join(DATA_DIR_NAME);
-    fs::create_dir_all(&data_dir).ok()?;
-    Some(data_dir)
+fn get_data_dir(app: &impl Manager<tauri::Wry>) -> Option<PathBuf> {
+    // 桌面优先：exe 同级 data 目录（保持现有 Windows 用户数据位置不变，避免"搬家"导致旧数据丢失）
+    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+        let data_dir = exe_dir.join(DATA_DIR_NAME);
+        if fs::create_dir_all(&data_dir).is_ok() {
+            return Some(data_dir);
+        }
+    }
+    // 移动端 / 拿不到 exe 路径时回退：AppData（桌面）或应用私有目录（Android/iOS），均可写
+    if let Ok(app_data) = app.path().app_data_dir() {
+        let data_dir = app_data.join(DATA_DIR_NAME);
+        if fs::create_dir_all(&data_dir).is_ok() {
+            return Some(data_dir);
+        }
+    }
+    None
 }
 
-fn read_custom_db_config() -> Option<String> {
-    let data_dir = get_data_dir()?;
+fn read_custom_db_config(app: &impl Manager<tauri::Wry>) -> Option<String> {
+    let data_dir = get_data_dir(app)?;
     let config_file = data_dir.join(DB_CONFIG_FILENAME);
     if !config_file.exists() {
         return None;
@@ -61,7 +71,7 @@ fn read_custom_db_config() -> Option<String> {
 }
 
 fn compute_db_url(app: &tauri::App) -> String {
-    if let Some(custom_path) = read_custom_db_config() {
+    if let Some(custom_path) = read_custom_db_config(app) {
         let db_path = PathBuf::from(&custom_path);
         if let Some(parent) = db_path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -71,7 +81,7 @@ fn compute_db_url(app: &tauri::App) -> String {
         return format!("sqlite:{}", path_str);
     }
 
-    if let Some(data_dir) = get_data_dir() {
+    if let Some(data_dir) = get_data_dir(app) {
         let db_path = data_dir.join(DB_FILENAME);
         if !db_path.exists() {
             if let Some(old_db) = get_old_db_path() {
@@ -181,7 +191,7 @@ fn pick_folder() -> Option<String> {
 }
 
 #[tauri::command]
-fn set_custom_db_path(new_dir: String, state: tauri::State<DbPathState>) -> Result<String, String> {
+fn set_custom_db_path(app: tauri::AppHandle, new_dir: String, state: tauri::State<DbPathState>) -> Result<String, String> {
     let new_dir_path = PathBuf::from(&new_dir);
     let validated_dir = validate_local_dir(&new_dir_path)
         .map_err(|e| format!("目标路径无效: {}", e))?;
@@ -198,7 +208,7 @@ fn set_custom_db_path(new_dir: String, state: tauri::State<DbPathState>) -> Resu
             .map_err(|e| format!("复制数据库失败: {}", e))?;
         eprintln!("[DB] 已复制数据库: {} -> {}", current_db.display(), new_db_path.display());
     }
-    let data_dir = get_data_dir().ok_or("无法获取 data 目录")?;
+    let data_dir = get_data_dir(&app).ok_or("无法获取 data 目录")?;
     let config_file = data_dir.join(DB_CONFIG_FILENAME);
     let config_json = serde_json::json!({
         "custom_db_path": new_db_path.to_string_lossy().replace('/', "\\")
@@ -213,8 +223,8 @@ fn set_custom_db_path(new_dir: String, state: tauri::State<DbPathState>) -> Resu
 }
 
 #[tauri::command]
-fn reset_custom_db_path() -> Result<(), String> {
-    let data_dir = get_data_dir().ok_or("无法获取 data 目录")?;
+fn reset_custom_db_path(app: tauri::AppHandle) -> Result<(), String> {
+    let data_dir = get_data_dir(&app).ok_or("无法获取 data 目录")?;
     let config_file = data_dir.join(DB_CONFIG_FILENAME);
     if config_file.exists() {
         fs::remove_file(&config_file)
@@ -370,7 +380,7 @@ fn s3_config_file(app: &tauri::AppHandle) -> Option<PathBuf> {
 fn read_s3_config(app: &tauri::AppHandle) -> Option<S3Config> {
     let path = s3_config_file(app)
         .or_else(|| {
-            let d = get_data_dir()?;
+            let d = get_data_dir(app)?;
             Some(d.join(S3_CONFIG_FILENAME))
         })?;
     if !path.exists() {
@@ -614,8 +624,8 @@ fn write_file(path: String, content: String) -> Result<String, String> {
 // ── 05 文件夹（应用数据目录内的真实文件树） ────────────────────
 // 所有路径严格限定在 <data_dir>/folders 之下，绝不越界到系统其他位置。
 
-fn folders_root_static() -> Result<PathBuf, String> {
-    let data_dir = get_data_dir().ok_or("无法获取 data 目录")?;
+fn folders_root_static(app: &impl Manager<tauri::Wry>) -> Result<PathBuf, String> {
+    let data_dir = get_data_dir(app).ok_or("无法获取 data 目录")?;
     let root = data_dir.join("folders");
     fs::create_dir_all(&root)
         .map_err(|e| format!("创建文件夹根目录失败: {}", e))?;
@@ -668,8 +678,8 @@ struct FolderListing {
 }
 
 #[tauri::command]
-fn folder_list(rel_path: String) -> Result<FolderListing, String> {
-    let root = folders_root_static()?;
+fn folder_list(app: tauri::AppHandle, rel_path: String) -> Result<FolderListing, String> {
+    let root = folders_root_static(&app)?;
     let dir = resolve_in_folders(&root, &rel_path)?;
     let mut entries: Vec<FolderEntry> = Vec::new();
     let read = fs::read_dir(&dir).map_err(|e| format!("读取目录失败: {}", e))?;
@@ -701,8 +711,8 @@ fn folder_list(rel_path: String) -> Result<FolderListing, String> {
 }
 
 #[tauri::command]
-fn folder_create(rel_path: String, name: String) -> Result<(), String> {
-    let root = folders_root_static()?;
+fn folder_create(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
+    let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let child = parent.join(sanitize_name(&name)?);
     if child.exists() {
@@ -714,8 +724,8 @@ fn folder_create(rel_path: String, name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn item_rename(rel_path: String, old_name: String, new_name: String) -> Result<(), String> {
-    let root = folders_root_static()?;
+fn item_rename(app: tauri::AppHandle, rel_path: String, old_name: String, new_name: String) -> Result<(), String> {
+    let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let src = parent.join(&old_name);
     let dst = parent.join(sanitize_name(&new_name)?);
@@ -726,8 +736,8 @@ fn item_rename(rel_path: String, old_name: String, new_name: String) -> Result<(
 }
 
 #[tauri::command]
-fn item_delete(rel_path: String, name: String) -> Result<(), String> {
-    let root = folders_root_static()?;
+fn item_delete(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
+    let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let target = parent.join(&name);
     if !target.exists() { return Err("目标不存在".to_string()); }
@@ -738,8 +748,8 @@ fn item_delete(rel_path: String, name: String) -> Result<(), String> {
 
 // ── 批量删除：forEach 调与 item_delete 相同的递归删除，返回成功删除数 ──
 #[tauri::command]
-fn item_delete_many(rel_path: String, names: Vec<String>) -> Result<u32, String> {
-    let root = folders_root_static()?;
+fn item_delete_many(app: tauri::AppHandle, rel_path: String, names: Vec<String>) -> Result<u32, String> {
+    let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let mut count: u32 = 0;
     for name in names {
@@ -753,8 +763,8 @@ fn item_delete_many(rel_path: String, names: Vec<String>) -> Result<u32, String>
 }
 
 #[tauri::command]
-fn item_move(rel_src: String, name: String, rel_dst: String) -> Result<(), String> {
-    let root = folders_root_static()?;
+fn item_move(app: tauri::AppHandle, rel_src: String, name: String, rel_dst: String) -> Result<(), String> {
+    let root = folders_root_static(&app)?;
     let src_parent = resolve_in_folders(&root, &rel_src)?;
     let dst_parent = resolve_in_folders(&root, &rel_dst)?;
     let src = src_parent.join(&name);
@@ -803,8 +813,8 @@ fn unique_copy_name(dst_parent: &Path, base: &str) -> PathBuf {
 }
 
 #[tauri::command]
-fn item_copy(rel_src: String, name: String, rel_dst: String) -> Result<(), String> {
-    let root = folders_root_static()?;
+fn item_copy(app: tauri::AppHandle, rel_src: String, name: String, rel_dst: String) -> Result<(), String> {
+    let root = folders_root_static(&app)?;
     let src_parent = resolve_in_folders(&root, &rel_src)?;
     let dst_parent = resolve_in_folders(&root, &rel_dst)?;
     let src = src_parent.join(&name);
@@ -837,8 +847,8 @@ fn pick_files() -> Option<Vec<String>> {
 fn pick_files() -> Option<Vec<String>> { None }
 
 #[tauri::command]
-fn import_files(paths: Vec<String>, rel_dst: String) -> Result<u32, String> {
-    let root = folders_root_static()?;
+fn import_files(app: tauri::AppHandle, paths: Vec<String>, rel_dst: String) -> Result<u32, String> {
+    let root = folders_root_static(&app)?;
     let dst_dir = resolve_in_folders(&root, &rel_dst)?;
     fs::create_dir_all(&dst_dir)
         .map_err(|e| format!("创建目标目录失败: {}", e))?;
@@ -881,8 +891,8 @@ fn open_path_default(path: &str) -> Result<(), String> {
 
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn file_open(rel_path: String, name: String) -> Result<(), String> {
-    let root = folders_root_static()?;
+fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
+    let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let target = parent.join(&name);
     if !target.is_file() { return Err("文件不存在".to_string()); }
@@ -894,7 +904,7 @@ fn file_open(rel_path: String, name: String) -> Result<(), String> {
 #[tauri::command]
 fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
-    let root = folders_root_static()?;
+    let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let target = parent.join(&name);
     if !target.is_file() { return Err("文件不存在".to_string()); }
@@ -914,7 +924,7 @@ fn import_file_from_uri(app: tauri::AppHandle, uri: String, name: String, rel_ds
     use std::str::FromStr;
     let fp = FilePath::from_str(&uri).map_err(|e| format!("无效路径: {}", e))?;
     let bytes = app.fs().read(fp).map_err(|e| format!("读取文件失败: {}", e))?;
-    let root = folders_root_static()?;
+    let root = folders_root_static(&app)?;
     let dst_dir = resolve_in_folders(&root, &rel_dst)?;
     std::fs::create_dir_all(&dst_dir).map_err(|e| format!("创建目标目录失败: {}", e))?;
     let dst = unique_copy_name(&dst_dir, &name);
@@ -993,7 +1003,7 @@ fn collect_rel_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(
 
 #[tauri::command]
 async fn folder_cloud_push(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    let root = folders_root_static()?;
+    let root = folders_root_static(&app)?;
     let mut rels: Vec<String> = Vec::new();
     collect_rel_files(&root, &root, &mut rels)?;
     let mut uploaded: u32 = 0;
@@ -1047,7 +1057,7 @@ async fn folder_cloud_pull(app: tauri::AppHandle) -> Result<serde_json::Value, S
     }
     let xml = resp.text().await.map_err(|e| format!("读取列表失败: {}", e))?;
     let keys = parse_s3_keys(&xml);
-    let root = folders_root_static()?;
+    let root = folders_root_static(&app)?;
     let mut downloaded: u32 = 0;
     for key in keys {
         if !key.starts_with("folders/") { continue; }
@@ -1197,6 +1207,7 @@ pub fn run() {
             pick_files,
             import_files,
             file_open,
+            #[cfg(target_os = "android")]
             import_file_from_uri,
             folder_cloud_push,
             folder_cloud_pull
