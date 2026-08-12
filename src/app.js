@@ -13451,7 +13451,6 @@ function __delegateClick(e) {
   var el = t.closest('[data-click]');
   if (!el) return;
   var name = el.getAttribute('data-click');
-  console.log('[click] name=', name, 'tag=', el.tagName, 'class=', el.className);
   if (name === '__noop') return;
   if (el.getAttribute('data-click-self') === '1' && e.target !== el) return;
   var fn, args = __parseClickArgs(el);
