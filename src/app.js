@@ -3181,8 +3181,14 @@ async function refreshFolderList() {
       '<div class="folder-cell type">类型</div>' +
       '</div>';
     entries.forEach(function (en) {
-      if (q && en.name.toLowerCase().indexOf(q) < 0) return;
-      _folderVisibleOrder.push(en.name);
+      // 诊断兜底：name 缺失/为空时显示明确占位符，便于排查"名称不见"类问题
+      var _nm = en.name;
+      var _nmTag = '';
+      if (_nm === undefined) { _nm = '⚠undef'; _nmTag = 'name=undefined;keys=' + Object.keys(en).join(','); }
+      else if (_nm === null) { _nm = '⚠null'; _nmTag = 'name=null'; }
+      else if (_nm === '') { _nm = '⚠empty'; _nmTag = 'name=空字符串'; }
+      if (q && String(_nm).toLowerCase().indexOf(q) < 0) return;
+      _folderVisibleOrder.push(en.name);   // 维持原始 key（用于 selected/map）
       _folderEntriesMap[en.name] = en.is_dir;
       var checked = _folderSelected.has(en.name) ? ' checked' : '';
       var icon = folderIconFor(en.ext, en.is_dir);
@@ -3192,7 +3198,7 @@ async function refreshFolderList() {
         '<div class="folder-cell check"><input type="checkbox" class="row-check" data-name="' + escapeAttr(en.name) + '"' + checked + '></div>' +
         '<div class="folder-cell name">' +
           '<span class="row-icon">' + icon + '</span>' +
-          '<span class="row-name" title="' + escapeAttr(en.name) + '">' + escapeHtml(en.name) + '</span>' +
+          '<span class="row-name" title="' + escapeAttr(_nmTag || _nm) + '">' + escapeHtml(_nm) + '</span>' +
         '</div>' +
         '<div class="folder-cell date">' + mtime + '</div>' +
         '<div class="folder-cell type" title="' + escapeAttr(typeLabel) + '">' + escapeHtml(typeLabel) + '</div>' +
@@ -3228,7 +3234,8 @@ async function pickFiles(opts) {
     var args = { multiple: !!opts.multiple };
     if (opts.filters) args.filters = opts.filters;
     if (opts.title) args.title = opts.title;
-    var r = await __invoke('plugin:dialog|open', args);
+    // Tauri v2 dialog plugin：open 必填 options 包裹（包成 { options: { multiple, filters, ... } }）
+    var r = await __invoke('plugin:dialog|open', { options: args });
     if (!r) return [];
     return Array.isArray(r) ? r : [r];
   } catch (e) {
