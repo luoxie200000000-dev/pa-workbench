@@ -757,7 +757,8 @@ var CLOUD_SECTIONS = [
     { key: 'plans', label: '教学计划', scope: 'global' },
     { key: 'schedule', label: '智能课程表', scope: 'global', keys: ['schedule', 'schedulePeriods', 'scheduleDays', 'adjustments'] },
     { key: 'progress', label: '教学进度', scope: 'global' },
-    { key: 'reminders', label: '提醒事项', scope: 'global' }
+    { key: 'reminders', label: '提醒事项', scope: 'global' },
+    { key: 'folders', label: '文件夹', scope: 'global' }
   ]},
   { id: 'student-mgmt', label: '派大星的学生日常管理', icon: '\u{1F465}', children: [
     { key: 'students', label: '学生档案总库', scope: 'class', classField: 'classId' }
@@ -868,15 +869,36 @@ async function cloudPushByClass(cls, sectionKeys) {
 
 async function cloudPushGlobal(sectionKeys) {
   if (!s3Configured()) { showToast('请先配置数据胶囊 S3', 'warn'); return false; }
-  var payload = { ts: Date.now() };
-  sectionKeys.forEach(function(k) {
-    var leaf = cloudLeafByKey(k);
-    if (!leaf || leaf.scope !== 'global') return;
-    if (leaf.keys) { leaf.keys.forEach(function(f) { payload[f] = state[f]; }); }
-    else { payload[k] = state[k]; }
-  });
-  await __invoke('s3_upload', { objectKey: 'global.json', data: JSON.stringify(payload) });
+  // 「文件夹」走独立的磁盘→S3 通道（folder_cloud_push），不进 global.json
+  var hasFolders = sectionKeys.indexOf('folders') >= 0;
+  var nonFolderKeys = sectionKeys.filter(function (k) { return k !== 'folders'; });
+  // 全局数据（global.json）通道：失败仅提示，不阻断文件夹上传
+  if (nonFolderKeys.length) {
+    var payload = { ts: Date.now() };
+    nonFolderKeys.forEach(function(k) {
+      var leaf = cloudLeafByKey(k);
+      if (!leaf || leaf.scope !== 'global') return;
+      if (leaf.keys) { leaf.keys.forEach(function(f) { payload[f] = state[f]; }); }
+      else { payload[k] = state[k]; }
+    });
+    try {
+      await __invoke('s3_upload', { objectKey: 'global.json', data: JSON.stringify(payload) });
+    } catch (e) {
+      console.warn('[Cloud] 全局数据上传失败：', e);
+      showToast('全局数据上传失败：' + (typeof e === 'string' ? e : (e && e.message ? e.message : String(e))), 'warn');
+    }
+  }
   state.cloudLastPush = Date.now();
+  // 文件夹通道：与 global.json 解耦，独立成败
+  if (hasFolders) {
+    try {
+      var r = await __invoke('folder_cloud_push');
+      console.log('[Cloud] 文件夹云上传完成，共 ' + ((r && r.uploaded) || 0) + ' 个文件');
+    } catch (e) {
+      console.warn('[Cloud] 文件夹云上传失败：', e);
+      showToast('文件夹上传失败：' + (typeof e === 'string' ? e : (e && e.message ? e.message : String(e))), 'warn');
+    }
+  }
   saveState();
   return true;
 }
@@ -904,21 +926,37 @@ async function cloudPullByClass(cls, sectionKeys) {
 
 async function cloudPullGlobal(sectionKeys) {
   if (!s3Configured()) { showToast('请先配置数据胶囊 S3', 'warn'); return false; }
-  var data;
-  try { data = await __invoke('s3_download', { objectKey: 'global.json' }); }
-  catch(e) {
-    var errMsg = typeof e === 'string' ? e : (e && e.message ? e.message : String(e));
-    if (errMsg.indexOf('NOT_FOUND') >= 0) { showToast('云端暂无全局数据', 'info'); return false; }
-    throw e;
+  // 「文件夹」走独立的 S3→磁盘 通道（folder_cloud_pull），与 global.json 解耦
+  var hasFolders = sectionKeys.indexOf('folders') >= 0;
+  var nonFolderKeys = sectionKeys.filter(function (k) { return k !== 'folders'; });
+  if (nonFolderKeys.length) {
+    var data;
+    try { data = await __invoke('s3_download', { objectKey: 'global.json' }); }
+    catch (e) {
+      var errMsg = typeof e === 'string' ? e : (e && e.message ? e.message : String(e));
+      if (errMsg.indexOf('NOT_FOUND') >= 0) { showToast('云端暂无全局数据', 'info'); }
+      else throw e;
+    }
+    if (data) {
+      var cloudData = JSON.parse(data);
+      nonFolderKeys.forEach(function(k) {
+        var leaf = cloudLeafByKey(k);
+        if (!leaf || leaf.scope !== 'global') return;
+        if (leaf.keys) { leaf.keys.forEach(function(f) { if (cloudData[f] !== undefined) state[f] = cloudData[f]; }); }
+        else if (cloudData[k] !== undefined) { state[k] = cloudData[k]; }
+      });
+    }
   }
-  var cloudData = JSON.parse(data);
-  sectionKeys.forEach(function(k) {
-    var leaf = cloudLeafByKey(k);
-    if (!leaf || leaf.scope !== 'global') return;
-    if (leaf.keys) { leaf.keys.forEach(function(f) { if (cloudData[f] !== undefined) state[f] = cloudData[f]; }); }
-    else if (cloudData[k] !== undefined) { state[k] = cloudData[k]; }
-  });
   state.cloudLastPull = Date.now();
+  if (hasFolders) {
+    try {
+      var r = await __invoke('folder_cloud_pull');
+      console.log('[Cloud] 文件夹云下载完成，共 ' + ((r && r.downloaded) || 0) + ' 个文件');
+    } catch (e) {
+      console.warn('[Cloud] 文件夹云下载失败：', e);
+      showToast('文件夹下载失败：' + (typeof e === 'string' ? e : (e && e.message ? e.message : String(e))), 'warn');
+    }
+  }
   saveState();
   return true;
 }
@@ -2781,7 +2819,7 @@ const PARENT_PAGES = {
 };
 
 // 学生工作任务页面免密，其他栏目需要密码验证
-const PASSWORD_EXEMPT_PAGES = ['st-task-info', 'st-random', 'st-homework', 'st-chat'];
+const PASSWORD_EXEMPT_PAGES = ['st-task-info', 'st-random', 'st-homework', 'st-chat', 'folder'];
 
 // ── 手机端底部导航 Tab → 子栏目映射 ──
 const MOBILE_SECTIONS = {
@@ -2792,7 +2830,8 @@ const MOBILE_SECTIONS = {
       {page:'tasks', icon:'\ud83d\udccb', label:'任务清单'},
       {page:'plan', icon:'\ud83d\udcdd', label:'教学计划'},
       {page:'schedule', icon:'\ud83d\udcc5', label:'智能课程表'},
-      {page:'progress', icon:'\ud83d\udcca', label:'教学进度'}
+      {page:'progress', icon:'\ud83d\udcca', label:'教学进度'},
+      {page:'folder', icon:'\ud83d\udcc1', label:'05 文件夹'}
     ]
   },
   students: {
@@ -2843,6 +2882,735 @@ const MOBILE_SECTIONS = {
 };
 // 折叠状态：groupKey → boolean
 var _mobileGroupCollapsed = {};
+
+// ── 05 文件夹（应用数据目录内的真实文件管理器） ──
+let _folderRelPath = '';
+var _folderSort = { key: 'name', dir: 'asc' };        // 列表排序：name | mtime
+var _folderMenuDocListenerAdded = false;              // 全局「点空白关菜单」监听只挂一次
+var _folderSelected = new Set();                      // 多选：当前选中的项目名集合
+var _folderAnchor = null;                             // Shift 多选锚点（行名）
+var _folderVisibleOrder = [];                         // 当前列表可见项渲染顺序（name 数组）
+var _folderEntriesMap = {};                           // name -> is_dir（批量操作取类型用）
+var _folderKeyListenerAdded = false;                  // Ctrl+A 全局监听守卫（只挂一次）
+var _folderDndListenerAdded = false;                  // 拖拽上传事件监听守卫（只挂一次）
+var _folderClipboard = null;                          // 复制/剪切剪贴板：{items:[{name,isDir}],mode:'copy'|'cut',srcRel}
+
+function formatBytes(bytes) {
+  if (bytes === null || bytes === undefined || isNaN(Number(bytes))) return '';
+  var u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var i = 0, n = Number(bytes);
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? n : n.toFixed(1)) + ' ' + u[i];
+}
+
+function folderIconFor(ext, isDir) {
+  if (isDir) return '📁';
+  var map = {
+    doc: '📝', docx: '📝', xls: '📊', xlsx: '📊', ppt: '📊', pptx: '📊',
+    pdf: '📄', png: '🖼️', jpg: '🖼️', jpeg: '🖼️', gif: '🖼️', webp: '🖼️',
+    zip: '🗜️', rar: '🗜️', '7z': '🗜️', txt: '📃', mp3: '🎵', mp4: '🎬'
+  };
+  return map[String(ext || '').toLowerCase()] || '📄';
+}
+
+// 把 Unix 秒戳格式化为「2025/8/23 17:04」风格（贴合 Windows 资源管理器）
+function formatDateTime(ts) {
+  if (!ts) return '';
+  var d = new Date(Number(ts) * 1000);
+  var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+// 按扩展名返回「Microsoft Word 文档」「PDF 文档」「PNG 图像」等友好类型名
+function fileTypeLabel(name, ext, isDir) {
+  if (isDir) return '文件夹';
+  var e = String(ext || (String(name || '').split('.').pop() || '')).toLowerCase();
+  var map = {
+    doc: 'Microsoft Word 文档', docx: 'Microsoft Word 文档', docm: 'Microsoft Word 文档',
+    dot: 'Microsoft Word 模板', dotx: 'Microsoft Word 模板',
+    xls: 'Microsoft Excel 工作表', xlsx: 'Microsoft Excel 工作表', xlsm: 'Microsoft Excel 工作表',
+    csv: 'CSV 文件',
+    ppt: 'Microsoft PowerPoint 演示文稿', pptx: 'Microsoft PowerPoint 演示文稿',
+    pdf: 'PDF 文档',
+    png: 'PNG 图像', jpg: 'JPEG 图像', jpeg: 'JPEG 图像', gif: 'GIF 图像',
+    bmp: 'BMP 图像', webp: 'WEBP 图像', svg: 'SVG 图像', ico: '图标文件', tif: 'TIFF 图像', tiff: 'TIFF 图像',
+    zip: 'ZIP 压缩文件', rar: 'RAR 压缩文件', '7z': '7Z 压缩文件', tar: 'TAR 压缩文件', gz: 'GZ 压缩文件',
+    txt: '文本文档', md: 'Markdown 文档', rtf: 'RTF 文档', log: '日志文件',
+    json: 'JSON 文件', xml: 'XML 文件', html: 'HTML 文件', htm: 'HTML 文件',
+    css: 'CSS 样式表', js: 'JavaScript 文件', ts: 'TypeScript 文件',
+    py: 'Python 文件', rs: 'Rust 源文件', java: 'Java 源文件', c: 'C 源文件', cpp: 'C++ 源文件',
+    mp3: 'MP3 音频', wav: 'WAV 音频', flac: 'FLAC 音频', aac: 'AAC 音频',
+    mp4: 'MP4 视频', mkv: 'MKV 视频', avi: 'AVI 视频', mov: 'MOV 视频',
+    exe: '应用程序', msi: 'Windows Installer 包', apk: 'Android 应用包'
+  };
+  return map[e] || (e ? e.toUpperCase() + ' 文件' : '文件');
+}
+
+async function renderFolder(area) {
+  if (!area) return;
+  area.style.position = 'relative';
+  if (!isTauriApp()) {
+    area.innerHTML = '<div class="empty-state"><span class="emoji">📁</span><div style="margin-top:10px">「05 文件夹」为桌面端功能。请在《派大星》Windows 桌面应用（安装包）中使用，可真实管理 Word / PPT / Excel / PDF / 图片 / 压缩包等任意文件，并一键云同步到你的云端。</div></div>';
+    return;
+  }
+  area.innerHTML =
+    '<style>' +
+    '.folder-toolbar{padding:12px 14px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap;}' +
+    '.folder-breadcrumb{font-size:14px;color:var(--text-muted);display:flex;align-items:center;flex-wrap:wrap;gap:2px;}' +
+    '.folder-breadcrumb .crumb-root{cursor:pointer;color:var(--primary);font-weight:600;}' +
+    '.folder-breadcrumb .crumb{color:var(--text);}' +
+    '.folder-breadcrumb .crumb-link{cursor:pointer;color:var(--primary);}' +
+    '.folder-breadcrumb .crumb-link:hover{text-decoration:underline;color:var(--primary-darker);}' +
+    '.folder-breadcrumb .crumb-sep{color:var(--text-muted);margin:0 4px;}' +
+    '.folder-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}' +
+    '.folder-list{padding:0 4px 8px;}' +
+    '.folder-row{display:flex;align-items:center;gap:10px;padding:7px 36px 7px 10px;border-radius:4px;position:relative;}' +
+    '.folder-row:not(.folder-row-header){border-bottom:1px solid #f0f0f0;}' +
+    '.folder-row:hover:not(.folder-row-header){background:#f5f7fa;}' +
+    '.folder-row.selected{background:#e6f0ff !important;}' +
+    '.folder-row-header{font-weight:600;color:#666;font-size:12px;padding:8px 10px;border-bottom:1px solid #e0e0e0;user-select:none;}' +
+    '.folder-row-header .folder-cell.name{cursor:pointer;}' +
+    '.folder-row-header .folder-cell.date{cursor:pointer;}' +
+    '.folder-row-header .folder-cell.name:hover,.folder-row-header .folder-cell.date:hover{color:var(--primary);}' +
+    '.folder-cell.name{flex:1;min-width:0;display:flex;align-items:center;gap:8px;overflow:hidden;}' +
+    '.folder-cell.date{width:150px;color:var(--text-muted);font-size:13px;flex-shrink:0;font-variant-numeric:tabular-nums;}' +
+    '.folder-cell.type{width:200px;color:var(--text-muted);font-size:13px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:4px;}' +
+    '.row-icon{flex:0 0 auto;font-size:16px;line-height:1;width:20px;text-align:center;}' +
+    '.row-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}' +
+    '.row-menu-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:none;border:none;background:rgba(255,255,255,0.92);cursor:pointer;font-size:16px;line-height:1;padding:2px 8px;border-radius:4px;color:#777;box-shadow:0 1px 3px rgba(0,0,0,0.10);}' +
+    '.folder-row:hover:not(.folder-row-header) .row-menu-btn{display:block;}' +
+    '.row-menu-btn:hover{background:#e8e8e8;color:#111;}' +
+    '@media (hover:none){.row-menu-btn{display:block !important;background:transparent;box-shadow:none;color:#999;}}' +
+    '.btn-sm{padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);cursor:pointer;font-size:13px;}' +
+    '.btn-sm:hover{background:var(--primary-lightest);}' +
+    '.btn-sm.paste-active{background:var(--primary);color:#fff;border-color:var(--primary);}' +
+    '.btn-sm.paste-active:hover{filter:brightness(1.06);}' +
+    '.row-menu-pop{position:fixed;z-index:9999;min-width:150px;background:var(--surface,#fff);border:1px solid var(--border,#d0d0d0);border-radius:6px;box-shadow:0 6px 22px rgba(0,0,0,0.16);padding:4px 0;font-size:13px;}' +
+    '.row-menu-pop .menu-item{padding:8px 14px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:8px;}' +
+    '.row-menu-pop .menu-item:hover{background:var(--primary-lightest,#eef4ff);}' +
+    '.row-menu-pop .menu-item.danger{color:#c0392b;}' +
+    '.row-menu-pop .menu-item.danger:hover{background:#fdecea;}' +
+    // 多选：行首复选框
+    '.row-check{flex:0 0 auto;width:15px;height:15px;margin:0 2px 0 0;cursor:pointer;accent-color:var(--primary,#2f6fed);}' +
+    '.folder-row-header .row-check{margin:0;}' +
+    // 拖拽上传：拖入高亮 + 遮罩提示
+    '.folder-list.drag-over{outline:2px dashed var(--primary,#2f6fed);outline-offset:-4px;background:#f3f8ff;border-radius:6px;}' +
+    '.folder-dnd-hint{display:none;position:absolute;left:8px;right:8px;top:64px;bottom:8px;z-index:50;align-items:center;justify-content:center;pointer-events:none;border:2px dashed var(--primary,#2f6fed);border-radius:8px;background:rgba(238,244,255,0.85);color:var(--primary,#2f6fed);font-size:15px;font-weight:600;}' +
+    '.folder-dnd-hint.show{display:flex;}' +
+    // 批量操作栏
+    '.folder-bulkbar{display:none;align-items:center;gap:8px;padding:6px 14px;background:var(--primary-lightest,#eef4ff);border-bottom:1px solid var(--border,#e0e0e0);font-size:13px;color:var(--text,#333);}' +
+    '.folder-bulkbar.show{display:flex;}' +
+    '.folder-bulkbar .bulk-info{font-weight:600;}' +
+    '.folder-bulkbar .btn-sm{padding:4px 10px;}' +
+    '</style>' +
+    '<div class="folder-toolbar flex-between">' +
+      '<div class="folder-breadcrumb" id="folderBreadcrumb"></div>' +
+      '<div class="folder-actions">' +
+        '<button class="btn-sm" data-fa="up">⬆️ 上级</button>' +
+        '<button class="btn-sm" data-fa="create">📁 新建文件夹</button>' +
+        '<button class="btn-sm" data-fa="upload">⬆️ 上传文件</button>' +
+        '<button class="btn-sm" id="folderPaste" data-fa="paste">📋 粘贴</button>' +
+        '<input type="search" id="folderSearch" class="form-input" placeholder="搜索文件名…" style="width:130px">' +
+        '<button class="btn-sm" data-fa="push">☁ 备份到云端</button>' +
+        '<button class="btn-sm" data-fa="pull">☁ 从云端恢复</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="folder-bulkbar" id="folderBulkBar">' +
+      '<span class="bulk-info" id="folderBulkInfo">已选择 0 项</span>' +
+      '<button class="btn-sm" data-fa="copy-sel">📋 复制</button>' +
+      '<button class="btn-sm" data-fa="cut-sel">✂ 剪切</button>' +
+      '<button class="btn-sm" data-fa="delete-sel">🗑 删除</button>' +
+      '<button class="btn-sm" data-fa="bulk-clear">✕ 取消选择</button>' +
+    '</div>' +
+    '<div class="folder-list" id="folderList"></div>' +
+    '<div class="folder-dnd-hint" id="folderDndHint">松开鼠标，上传到「当前文件夹」</div>';
+
+  var listEl = area.querySelector('#folderList');
+  var barEl = area.querySelector('.folder-actions');
+  var bcEl = area.querySelector('#folderBreadcrumb');
+  var searchEl = area.querySelector('#folderSearch');
+  if (listEl) {
+    // data-fa 动作（菜单 ⋯、面包屑等）
+    listEl.addEventListener('click', onFolderClick);
+    // 表头点击排序 + 行体点击多选（data-fa 按钮交由 onFolderClick 处理）
+    listEl.addEventListener('click', function (e) {
+      var sortCell = e.target.closest('.folder-row-header [data-sort]');
+      if (sortCell) {
+        var key = sortCell.getAttribute('data-sort');
+        if (_folderSort.key === key) {
+          _folderSort.dir = _folderSort.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          _folderSort.key = key; _folderSort.dir = 'asc';
+        }
+        refreshFolderList();
+        return;
+      }
+      var row = e.target.closest('.folder-row');
+      if (!row || row.classList.contains('folder-row-header')) return;
+      if (e.target.closest('[data-fa]')) return;   // 菜单/按钮交给 onFolderClick
+      if (e.target.closest('.row-check')) return;  // 复选框由 change 事件处理
+      var name = row.getAttribute('data-name');
+      if (e.shiftKey && _folderAnchor != null) {
+        selectRange(name);
+      } else if (e.ctrlKey || e.metaKey) {
+        toggleSelect(name);
+      } else {
+        setSingleSelect(name);
+      }
+      _folderAnchor = name;
+    });
+    // 行首复选框：勾选/取消（等价于 Ctrl 点击，不清空其它）
+    listEl.addEventListener('change', function (e) {
+      var cb = e.target.closest('.row-check');
+      if (!cb) return;
+      var name = cb.getAttribute('data-name');
+      if (cb.checked) { _folderSelected.add(name); } else { _folderSelected.delete(name); }
+      _folderAnchor = name;
+      applySelectionDom();
+      updateBulkBar();
+    });
+    // 右键菜单：行上→针对该项（保持多选）；空白处→新建/粘贴/刷新
+    listEl.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      var row = e.target.closest('.folder-row');
+      var targetRow = (row && !row.classList.contains('folder-row-header')) ? row : null;
+      openContextMenu(e.clientX, e.clientY, targetRow);
+    });
+    // 双击：进入文件夹 / 打开文件
+    listEl.addEventListener('dblclick', function (e) {
+      var row = e.target.closest('.folder-row');
+      if (!row || row.classList.contains('folder-row-header')) return;
+      var n = row.getAttribute('data-name');
+      var d = row.getAttribute('data-isdir') === '1';
+      runFolderAction(d ? 'enter' : 'open', n, d);
+    });
+  }
+  if (barEl) barEl.addEventListener('click', onFolderClick);
+  if (bcEl) bcEl.addEventListener('click', onFolderClick);
+  var bulkBar = area.querySelector('#folderBulkBar');
+  if (bulkBar) bulkBar.addEventListener('click', onFolderClick);   // 复制/剪切/删除/取消选择
+  if (searchEl) searchEl.addEventListener('input', function () { refreshFolderList(); });
+  // 拖拽上传：监听 Tauri 默认 emit 的拖放事件（tauri://drag-*），走 plugin:event|listen，不受 CSP 限制
+  if (!_folderDndListenerAdded && isTauriApp()) {
+    _folderDndListenerAdded = true;
+    Promise.resolve()
+      .then(function () { return import('@tauri-apps/api/event'); })
+      .then(function (mod) {
+        mod.listen('tauri://drag-enter', function () { if (document.getElementById('folderList')) onFolderDragEnter(); });
+        mod.listen('tauri://drag-over', function () {});
+        mod.listen('tauri://drag-leave', function () { if (document.getElementById('folderList')) onFolderDragLeave(); });
+        mod.listen('tauri://drag-drop', function (e) {
+          var p = (e && e.payload && e.payload.paths) || [];
+          onFolderDrop(p);
+        });
+      })
+      .catch(function () {});
+  }
+  // Ctrl / Command + A 全选（仅文件夹页面生效，屏蔽浏览器默认全选）
+  if (!_folderKeyListenerAdded) {
+    _folderKeyListenerAdded = true;
+    document.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+        if (!document.getElementById('folderList')) return;
+        var t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;  // 让输入框自己处理 Ctrl+A
+        e.preventDefault();
+        selectAllVisible();
+      }
+    });
+  }
+  // 全局：点击菜单弹窗外或非 ⋯ 按钮时关闭弹窗（只挂一次）
+  if (!_folderMenuDocListenerAdded) {
+    _folderMenuDocListenerAdded = true;
+    document.addEventListener('click', function (e) {
+      if (e.target.closest('.row-menu-pop')) return;
+      if (e.target.closest('[data-fa="menu"]')) return;
+      var p = document.querySelector('.row-menu-pop');
+      if (p) p.remove();
+    });
+  }
+
+  await refreshFolderList();
+}
+
+async function refreshFolderList() {
+  var listEl = document.getElementById('folderList');
+  var bcEl = document.getElementById('folderBreadcrumb');
+  var searchEl = document.getElementById('folderSearch');
+  if (!listEl) return;
+  try {
+    var data = await __invoke('folder_list', { relPath: _folderRelPath });
+    if (bcEl) {
+      // 面包屑：每段都可点击跳转（根=root，子段=goto+data-rel）
+      var crumbs = [{ label: '文件夹', rel: '' }];
+      if (_folderRelPath) {
+        var acc = '';
+        _folderRelPath.split('/').forEach(function (p) {
+          acc = acc ? (acc + '/' + p) : p;
+          crumbs.push({ label: p, rel: acc });
+        });
+      }
+      bcEl.innerHTML = crumbs.map(function (c, i) {
+        if (i === 0) return '<span class="crumb-root" data-fa="root">' + escapeHtml(c.label) + '</span>';
+        return '<span class="crumb-sep">/</span><span class="crumb-link" data-fa="goto" data-rel="' + escapeAttr(c.rel) + '" title="进入 ' + escapeAttr(c.label) + '">' + escapeHtml(c.label) + '</span>';
+      }).join('');
+    }
+    // 排序：按当前 _folderSort（文件夹始终排在文件之前，名称排序时）
+    var entries = (data.entries || []).slice();
+    var sKey = _folderSort.key;
+    var sMul = _folderSort.dir === 'desc' ? -1 : 1;
+    entries.sort(function (a, b) {
+      if (sKey === 'mtime') {
+        return ((Number(a.mtime) || 0) - (Number(b.mtime) || 0)) * sMul;
+      }
+      // name 排序：文件夹优先，再按中文本地化比较
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+      return String(a.name).localeCompare(String(b.name), 'zh-CN') * sMul;
+    });
+    var q = ((searchEl && searchEl.value) || '').trim().toLowerCase();
+    _folderVisibleOrder = [];
+    _folderEntriesMap = {};
+    // 表头：全选 | 名称 / 修改日期（可点排序）/ 类型
+    var sortArrow = function (k) {
+      return _folderSort.key === k ? (_folderSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    };
+    var html = '<div class="folder-row folder-row-header">' +
+      '<div class="folder-cell check"><input type="checkbox" class="row-check" id="folderCheckAll"></div>' +
+      '<div class="folder-cell name" data-sort="name">名称' + sortArrow('name') + '</div>' +
+      '<div class="folder-cell date" data-sort="mtime">修改日期' + sortArrow('mtime') + '</div>' +
+      '<div class="folder-cell type">类型</div>' +
+      '</div>';
+    entries.forEach(function (en) {
+      if (q && en.name.toLowerCase().indexOf(q) < 0) return;
+      _folderVisibleOrder.push(en.name);
+      _folderEntriesMap[en.name] = en.is_dir;
+      var checked = _folderSelected.has(en.name) ? ' checked' : '';
+      var icon = folderIconFor(en.ext, en.is_dir);
+      var typeLabel = fileTypeLabel(en.name, en.ext, en.is_dir);
+      var mtime = formatDateTime(en.mtime);
+      html += '<div class="folder-row" data-name="' + escapeAttr(en.name) + '" data-isdir="' + (en.is_dir ? '1' : '0') + '">' +
+        '<div class="folder-cell check"><input type="checkbox" class="row-check" data-name="' + escapeAttr(en.name) + '"' + checked + '></div>' +
+        '<div class="folder-cell name">' +
+          '<span class="row-icon">' + icon + '</span>' +
+          '<span class="row-name" title="' + escapeAttr(en.name) + '">' + escapeHtml(en.name) + '</span>' +
+        '</div>' +
+        '<div class="folder-cell date">' + mtime + '</div>' +
+        '<div class="folder-cell type" title="' + escapeAttr(typeLabel) + '">' + escapeHtml(typeLabel) + '</div>' +
+        '<button class="row-menu-btn" data-fa="menu" title="更多操作">⋯</button>' +
+      '</div>';
+    });
+    listEl.innerHTML = html || '<div class="empty-state">此文件夹为空</div>';
+    applySelectionDom();
+    updateBulkBar();
+    var ca = listEl.querySelector('#folderCheckAll');
+    if (ca) {
+      setCheckAllState(ca);
+      ca.addEventListener('change', function () {
+        if (ca.checked) { _folderVisibleOrder.forEach(function (n) { _folderSelected.add(n); }); }
+        else { _folderVisibleOrder.forEach(function (n) { _folderSelected.delete(n); }); }
+        applySelectionDom();
+        updateBulkBar();
+      });
+    }
+    updateFolderPasteBtn();
+  } catch (e) {
+    listEl.innerHTML = '<div class="empty-state">加载失败：' + escapeHtml(String(e)) + '</div>';
+  }
+}
+
+// 跨平台文件选择：移动端/桌面统一走 tauri-plugin-dialog 的 open 命令。
+// 注：后端 pick_files 在 Android 上返回 None（残实现），故前端直接调 dialog 插件；
+// 桌面端同样走 dialog（原生多选，体验一致），移动端因此可用。
+async function pickFiles(opts) {
+  opts = opts || {};
+  if (!isTauriApp()) return [];
+  try {
+    var args = { multiple: !!opts.multiple };
+    if (opts.filters) args.filters = opts.filters;
+    if (opts.title) args.title = opts.title;
+    var r = await __invoke('plugin:dialog|open', args);
+    if (!r) return [];
+    return Array.isArray(r) ? r : [r];
+  } catch (e) {
+    console.warn('[pickFiles] 打开文件选择器失败：', e);
+    showToast('无法打开文件选择器：' + (typeof e === 'string' ? e : (e && e.message ? e.message : String(e))), 'warn');
+    return [];
+  }
+}
+
+// 执行具体的文件夹动作（行内点击与菜单弹窗共用）
+async function runFolderAction(action, name, isDir) {
+  try {
+    if (action === 'up') {
+      clearSelection();
+      if (_folderRelPath) {
+        var parts = _folderRelPath.split('/');
+        parts.pop();
+        _folderRelPath = parts.join('/');
+      }
+      await refreshFolderList();
+    } else if (action === 'root') {
+      clearSelection();
+      _folderRelPath = '';
+      await refreshFolderList();
+    } else if (action === 'goto') {
+      // 面包屑点击跳转：name 即目标相对路径（来源 data-rel）
+      clearSelection();
+      _folderRelPath = name || '';
+      await refreshFolderList();
+    } else if (action === 'enter') {
+      clearSelection();
+      _folderRelPath = (_folderRelPath ? _folderRelPath + '/' : '') + name;
+      await refreshFolderList();
+    } else if (action === 'open') {
+      await __invoke('file_open', { relPath: _folderRelPath, name: name });
+    } else if (action === 'create') {
+      var nm = prompt('新建文件夹名称：');
+      if (!nm) return;
+      await __invoke('folder_create', { relPath: _folderRelPath, name: nm });
+      showToast('已新建文件夹：' + nm);
+      await refreshFolderList();
+    } else if (action === 'upload') {
+      var paths = await pickFiles({ multiple: true });
+      if (!paths || !paths.length) return;
+      // 区分真实路径与 Android content:// URI（移动端 dialog 返回 content URI，std::fs 读不了）
+      var real = [], content = [];
+      paths.forEach(function (p) {
+        if (typeof p === 'string' && p.indexOf('content://') === 0) content.push(p);
+        else real.push(p);
+      });
+      var total = 0;
+      if (real.length) {
+        var n = await __invoke('import_files', { paths: real, relDst: _folderRelPath });
+        total += (n || 0);
+      }
+      for (var ci = 0; ci < content.length; ci++) {
+        try {
+          var uri = content[ci];
+          var nm = uri.split('/').pop() || ('文件_' + Date.now());
+          try { nm = decodeURIComponent(nm); } catch (e) {}
+          var r = await __invoke('import_file_from_uri', { uri: uri, name: nm, relDst: _folderRelPath });
+          total += (r && r.count) || 0;
+        } catch (e) {
+          showToast('导入失败：' + (typeof e === 'string' ? e : (e && e.message ? e.message : String(e))), 'warn');
+        }
+      }
+      showToast('已导入 ' + total + ' 个文件');
+      await refreshFolderList();
+    } else if (action === 'rename') {
+      var nn = prompt('重命名为：', name);
+      if (!nn || nn === name) return;
+      await __invoke('item_rename', { relPath: _folderRelPath, oldName: name, newName: nn });
+      showToast('已重命名');
+      await refreshFolderList();
+    } else if (action === 'delete') {
+      if (!confirm('确定删除「' + name + '」' + (isDir ? '（及其下所有内容）' : '') + '？')) return;
+      await __invoke('item_delete', { relPath: _folderRelPath, name: name });
+      showToast('已删除');
+      await refreshFolderList();
+    } else if (action === 'copy') {
+      _folderClipboard = { items: [{ name: name, isDir: isDir }], mode: 'copy', srcRel: _folderRelPath };
+      updateFolderPasteBtn();
+      showToast('已复制：' + name + '（去目标文件夹点「粘贴」）');
+    } else if (action === 'cut') {
+      _folderClipboard = { items: [{ name: name, isDir: isDir }], mode: 'cut', srcRel: _folderRelPath };
+      updateFolderPasteBtn();
+      showToast('已剪切：' + name + '（去目标文件夹点「粘贴」）');
+    } else if (action === 'copy-sel') {
+      bulkSetClipboard('copy');
+    } else if (action === 'cut-sel') {
+      bulkSetClipboard('cut');
+    } else if (action === 'delete-sel') {
+      await bulkDeleteSelected();
+    } else if (action === 'refresh') {
+      await refreshFolderList();
+    } else if (action === 'bulk-clear') {
+      clearSelection();
+    } else if (action === 'paste') {
+      await doFolderPaste();
+    } else if (action === 'push') {
+      showToast('正在备份到云端…');
+      var r = await __invoke('folder_cloud_push');
+      showToast('已备份 ' + ((r && r.uploaded) || 0) + ' 个文件');
+    } else if (action === 'pull') {
+      if (!confirm('从云端恢复会覆盖本地同名文件，继续？')) return;
+      showToast('正在从云端恢复…');
+      var r2 = await __invoke('folder_cloud_pull');
+      showToast('已恢复 ' + ((r2 && r2.downloaded) || 0) + ' 个文件');
+      await refreshFolderList();
+    }
+  } catch (err) {
+    showToast('操作失败：' + String(err));
+  }
+}
+
+// 粘贴剪贴板内容到当前目录（复制=保留源；剪切=移动后清空）
+async function doFolderPaste() {
+  if (!_folderClipboard || !_folderClipboard.items || !_folderClipboard.items.length) {
+    showToast('请先「复制」或「剪切」一个项目'); return;
+  }
+  var cb = _folderClipboard;
+  try {
+    var n = 0, skipped = 0;
+    for (var i = 0; i < cb.items.length; i++) {
+      var it = cb.items[i];
+      // 剪切且目标与源同目录 → 跳过（已在当前文件夹）
+      if (cb.mode === 'cut' && cb.srcRel === _folderRelPath) { skipped++; continue; }
+      if (cb.mode === 'cut') {
+        await __invoke('item_move', { relSrc: cb.srcRel, name: it.name, relDst: _folderRelPath });
+      } else {
+        await __invoke('item_copy', { relSrc: cb.srcRel, name: it.name, relDst: _folderRelPath });
+      }
+      n++;
+    }
+    if (cb.mode === 'cut') _folderClipboard = null;   // 剪切后清空剪贴板
+    updateFolderPasteBtn();
+    showToast(cb.mode === 'cut'
+      ? ('已移动 ' + n + ' 项' + (skipped ? '（' + skipped + ' 项已在当前文件夹）' : ''))
+      : ('已复制 ' + n + ' 项'));
+    await refreshFolderList();
+  } catch (err) {
+    showToast('粘贴失败：' + String(err));
+  }
+}
+
+// 根据剪贴板状态刷新工具栏「粘贴」按钮（有内容时高亮并显示项目数/名）
+function updateFolderPasteBtn() {
+  var btn = document.getElementById('folderPaste');
+  if (!btn) return;
+  if (_folderClipboard && _folderClipboard.items && _folderClipboard.items.length) {
+    var cnt = _folderClipboard.items.length;
+    var label = cnt === 1 ? _folderClipboard.items[0].name : (cnt + ' 项');
+    btn.textContent = '📋 粘贴：' + label;
+    btn.classList.add('paste-active');
+  } else {
+    btn.textContent = '📋 粘贴';
+    btn.classList.remove('paste-active');
+  }
+}
+
+// ── 多选 / 批量操作辅助函数 ──
+function applySelectionDom() {
+  var listEl = document.getElementById('folderList');
+  if (!listEl) return;
+  listEl.querySelectorAll('.folder-row').forEach(function (r) {
+    if (r.classList.contains('folder-row-header')) return;
+    var n = r.getAttribute('data-name');
+    if (_folderSelected.has(n)) r.classList.add('selected'); else r.classList.remove('selected');
+  });
+}
+
+function updateBulkBar() {
+  var bar = document.getElementById('folderBulkBar');
+  var info = document.getElementById('folderBulkInfo');
+  if (bar) { if (_folderSelected.size > 0) bar.classList.add('show'); else bar.classList.remove('show'); }
+  if (info) info.textContent = '已选择 ' + _folderSelected.size + ' 项';
+  var ca = document.getElementById('folderCheckAll');
+  if (ca) setCheckAllState(ca);
+}
+
+function setCheckAllState(ca) {
+  var total = _folderVisibleOrder.length;
+  var sel = 0;
+  _folderVisibleOrder.forEach(function (n) { if (_folderSelected.has(n)) sel++; });
+  ca.checked = (total > 0 && sel === total);
+  try { ca.indeterminate = (sel > 0 && sel < total); } catch (e) {}
+}
+
+function setSingleSelect(name) {
+  _folderSelected.clear();
+  _folderSelected.add(name);
+  applySelectionDom(); updateBulkBar();
+}
+
+function toggleSelect(name) {
+  if (_folderSelected.has(name)) _folderSelected.delete(name); else _folderSelected.add(name);
+  applySelectionDom(); updateBulkBar();
+}
+
+function selectRange(name) {
+  var order = _folderVisibleOrder;
+  var a = order.indexOf(_folderAnchor);
+  var b = order.indexOf(name);
+  if (a < 0) a = 0;
+  if (b < 0) b = order.length - 1;
+  var lo = Math.min(a, b), hi = Math.max(a, b);
+  for (var i = lo; i <= hi; i++) _folderSelected.add(order[i]);
+  applySelectionDom(); updateBulkBar();
+}
+
+function clearSelection() {
+  _folderSelected.clear();
+  _folderAnchor = null;
+  applySelectionDom(); updateBulkBar();
+  var ca = document.getElementById('folderCheckAll');
+  if (ca) { ca.checked = false; try { ca.indeterminate = false; } catch (e) {} }
+}
+
+function selectAllVisible() {
+  _folderVisibleOrder.forEach(function (n) { _folderSelected.add(n); });
+  applySelectionDom(); updateBulkBar();
+}
+
+function bulkSetClipboard(mode) {
+  if (_folderSelected.size === 0) { showToast('请先选中要' + (mode === 'cut' ? '剪切' : '复制') + '的项目'); return; }
+  var items = [];
+  _folderSelected.forEach(function (n) { items.push({ name: n, isDir: !!_folderEntriesMap[n] }); });
+  _folderClipboard = { items: items, mode: mode, srcRel: _folderRelPath };
+  updateFolderPasteBtn();
+  showToast((mode === 'cut' ? '已剪切 ' : '已复制 ') + items.length + ' 项（去目标文件夹点「粘贴」）');
+}
+
+async function bulkDeleteSelected() {
+  if (_folderSelected.size === 0) return;
+  var names = [];
+  _folderSelected.forEach(function (n) { names.push(n); });
+  if (!confirm('确定删除选中的 ' + names.length + ' 个项目？此操作不可撤销。')) return;
+  try {
+    var r = await __invoke('item_delete_many', { relPath: _folderRelPath, names: names });
+    showToast('已删除 ' + ((r && r.count) || 0) + ' 个文件');
+    clearSelection();
+    await refreshFolderList();
+  } catch (err) {
+    showToast('批量删除失败：' + String(err));
+  }
+}
+
+// 右键菜单：行上→针对该项（保持多选）；空白处→新建/粘贴/刷新
+function openContextMenu(x, y, targetRow) {
+  var existing = document.querySelector('.row-menu-pop');
+  if (existing) existing.remove();
+  var hasSel = _folderSelected.size > 0;
+  var targetName = targetRow ? targetRow.getAttribute('data-name') : null;
+  var targetIsDir = targetRow ? targetRow.getAttribute('data-isdir') === '1' : false;
+  if (targetRow) {
+    // 右键在已选中的多行之一 → 保持多选；否则改为只选该行
+    if (!hasSel || !_folderSelected.has(targetName)) setSingleSelect(targetName);
+  }
+  var items = [];
+  if (targetRow) {
+    items.push({ fa: targetIsDir ? 'enter' : 'open', label: '📂 打开' });
+    items.push({ fa: 'copy-sel', label: '📋 复制' + (hasSel ? '（' + _folderSelected.size + ' 项）' : '') });
+    items.push({ fa: 'cut-sel', label: '✂ 剪切' + (hasSel ? '（' + _folderSelected.size + ' 项）' : '') });
+    items.push({ fa: 'rename', label: '✏ 重命名' });
+    items.push({ fa: 'delete-sel', label: '🗑 删除' + (hasSel ? '（' + _folderSelected.size + ' 项）' : ''), danger: true });
+  } else {
+    items.push({ fa: 'create', label: '📁 新建文件夹' });
+    if (_folderClipboard && _folderClipboard.items && _folderClipboard.items.length) items.push({ fa: 'paste', label: '📋 粘贴' });
+    items.push({ fa: 'refresh', label: '↻ 刷新' });
+    if (hasSel) {
+      items.push({ fa: 'copy-sel', label: '📋 复制选中（' + _folderSelected.size + '）' });
+      items.push({ fa: 'cut-sel', label: '✂ 剪切选中（' + _folderSelected.size + '）' });
+      items.push({ fa: 'delete-sel', label: '🗑 删除选中（' + _folderSelected.size + '）', danger: true });
+    }
+  }
+  var pop = document.createElement('div');
+  pop.className = 'row-menu-pop';
+  pop.innerHTML = items.map(function (it) {
+    return '<div class="menu-item' + (it.danger ? ' danger' : '') + '" data-fa="' + it.fa + '">' + it.label + '</div>';
+  }).join('');
+  var popW = 180, popH = items.length * 34 + 8;
+  var left = x, top = y;
+  if (left + popW > window.innerWidth) left = window.innerWidth - popW - 8;
+  if (top + popH > window.innerHeight) top = window.innerHeight - popH - 8;
+  if (left < 8) left = 8;
+  if (top < 8) top = 8;
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+  pop.addEventListener('click', function (ev) {
+    var it = ev.target.closest('[data-fa]');
+    if (!it) return;
+    var fa = it.getAttribute('data-fa');
+    pop.remove();
+    runFolderAction(fa, targetName, targetIsDir);
+  });
+  document.body.appendChild(pop);
+}
+
+// ── 拖拽上传处理（由 Tauri 默认拖放事件 tauri://drag-* 触发） ──
+function onFolderDragEnter() {
+  var el = document.getElementById('folderList');
+  var h = document.getElementById('folderDndHint');
+  if (el) el.classList.add('drag-over');
+  if (h && el) h.classList.add('show');
+}
+function onFolderDragLeave() {
+  var el = document.getElementById('folderList');
+  var h = document.getElementById('folderDndHint');
+  if (el) el.classList.remove('drag-over');
+  if (h) h.classList.remove('show');
+}
+function onFolderDrop(paths) {
+  var el = document.getElementById('folderList');
+  var h = document.getElementById('folderDndHint');
+  if (el) el.classList.remove('drag-over');
+  if (h) h.classList.remove('show');
+  if (!el) return;   // 不在文件夹页面，忽略拖放
+  if (!paths || !paths.length) return;
+  __invoke('import_files', { paths: paths, relDst: _folderRelPath })
+    .then(function (n) { showToast('已拖入上传 ' + (n || 0) + ' 个文件'); refreshFolderList(); })
+    .catch(function (err) { showToast('拖入上传失败：' + String(err)); });
+}
+
+// 在某行按钮旁弹出操作菜单（行内 hover 显示的 ⋯ 按钮触发）
+function openRowMenu(btn, name, isDir) {
+  var existing = document.querySelector('.row-menu-pop');
+  // 同一行重复点 → 关闭
+  if (existing && existing.getAttribute('data-name') === name && existing.getAttribute('data-isdir') === (isDir ? '1' : '0')) {
+    existing.remove();
+    return;
+  }
+  if (existing) existing.remove();
+  var rect = btn.getBoundingClientRect();
+  var pop = document.createElement('div');
+  pop.className = 'row-menu-pop';
+  pop.setAttribute('data-name', name);
+  pop.setAttribute('data-isdir', isDir ? '1' : '0');
+  pop.innerHTML =
+    '<div class="menu-item" data-fa="' + (isDir ? 'enter' : 'open') + '">📂 打开</div>' +
+    '<div class="menu-item" data-fa="rename">✏ 重命名</div>' +
+    '<div class="menu-item" data-fa="copy">📋 复制</div>' +
+    '<div class="menu-item" data-fa="cut">✂ 剪切</div>' +
+    '<div class="menu-item danger" data-fa="delete">🗑 删除</div>';
+  // 定位：弹窗在按钮下方、右对齐到按钮右侧；空间不够则向上弹出
+  var popW = 150;
+  var left = rect.right - popW;
+  if (left < 8) left = 8;
+  var top = rect.bottom + 4;
+  if (top + 170 > window.innerHeight) top = rect.top - 170 - 4;
+  if (top < 8) top = 8;
+  pop.style.top = top + 'px';
+  pop.style.left = left + 'px';
+  // 弹窗内点击直接走 runFolderAction
+  pop.addEventListener('click', function (ev) {
+    var it = ev.target.closest('[data-fa]');
+    if (!it) return;
+    var p = pop; p.remove();
+    runFolderAction(it.getAttribute('data-fa'), p.getAttribute('data-name'), p.getAttribute('data-isdir') === '1');
+  });
+  document.body.appendChild(pop);
+}
+
+// 行内/工具栏/面包屑的 data-fa 统一入口（弹窗类动作 → openRowMenu；其余 → runFolderAction）
+async function onFolderClick(e) {
+  var el = e.target.closest('[data-fa]');
+  if (!el) return;
+  var action = el.getAttribute('data-fa');
+  // 上下文：从最近带 data-name 的元素取（.folder-row 或 .row-menu-pop）
+  var ctx = el.closest('[data-name]');
+  var name = ctx ? ctx.getAttribute('data-name') : '';
+  var isDir = ctx ? ctx.getAttribute('data-isdir') === '1' : false;
+  if (action === 'menu') {
+    openRowMenu(el, name, isDir);
+    return;
+  }
+  if (action === 'goto') {
+    // 面包屑跳转：data-rel 即目标相对路径
+    await runFolderAction('goto', el.getAttribute('data-rel') || '', false);
+    return;
+  }
+  await runFolderAction(action, name, isDir);
+}
 
 function navigateTo(page) {
   console.log('[navigateTo] START page=', page, 'current=', (state||{}).currentPage, 'passwordUnlocked=', (state||{}).passwordUnlocked, 'hasPassword=', !!(state||{}).appPassword);
@@ -3546,6 +4314,7 @@ function _doRenderPage() {
     case 'skill-links': renderSkillLinks(area); break;
     case 'ima-link': renderImaLink(area); break;
     case 'daily-quiz': renderDailyQuiz(area); break;
+    case 'folder': renderFolder(area); break;
     case 'xiuxian':
     case 'xiuxian-archive':
     case 'xiuxian-tasks':

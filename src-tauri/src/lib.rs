@@ -611,6 +611,471 @@ fn write_file(path: String, content: String) -> Result<String, String> {
     Ok(path)
 }
 
+// ── 05 文件夹（应用数据目录内的真实文件树） ────────────────────
+// 所有路径严格限定在 <data_dir>/folders 之下，绝不越界到系统其他位置。
+
+fn folders_root_static() -> Result<PathBuf, String> {
+    let data_dir = get_data_dir().ok_or("无法获取 data 目录")?;
+    let root = data_dir.join("folders");
+    fs::create_dir_all(&root)
+        .map_err(|e| format!("创建文件夹根目录失败: {}", e))?;
+    Ok(root)
+}
+
+/// 把相对路径解析为 folders 内的绝对路径，并校验未越界。
+fn resolve_in_folders(root: &Path, rel_path: &str) -> Result<PathBuf, String> {
+    let rel_path = rel_path.trim().trim_matches('/').trim_matches('\\');
+    let target = if rel_path.is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(rel_path)
+    };
+    let canon = target.canonicalize().unwrap_or_else(|_| target.clone());
+    let root_canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    if canon != root_canon && !canon.starts_with(&root_canon) {
+        return Err("路径越界：不允许访问 folders 目录之外".to_string());
+    }
+    Ok(canon)
+}
+
+/// 校验单段名称合法（防穿越），配合 resolve_in_folders 双保险。
+fn sanitize_name(name: &str) -> Result<String, String> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err("名称不能为空".to_string());
+    }
+    if n == "." || n == ".."
+        || n.contains("..") || n.contains('/') || n.contains('\\')
+        || n.contains('\\') {
+        return Err("名称包含非法字符".to_string());
+    }
+    Ok(n.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct FolderEntry {
+    name: String,
+    is_dir: bool,
+    size: u64,
+    mtime: i64,
+    ext: String,
+}
+
+#[derive(serde::Serialize)]
+struct FolderListing {
+    rel_path: String,
+    entries: Vec<FolderEntry>,
+}
+
+#[tauri::command]
+fn folder_list(rel_path: String) -> Result<FolderListing, String> {
+    let root = folders_root_static()?;
+    let dir = resolve_in_folders(&root, &rel_path)?;
+    let mut entries: Vec<FolderEntry> = Vec::new();
+    let read = fs::read_dir(&dir).map_err(|e| format!("读取目录失败: {}", e))?;
+    for entry in read {
+        let entry = match entry { Ok(e) => e, Err(_) => continue };
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
+        let is_dir = meta.is_dir();
+        let (size, ext) = if is_dir {
+            (0u64, String::new())
+        } else {
+            let ext = path.extension()
+                .map(|e| e.to_string_lossy().to_string().to_lowercase())
+                .unwrap_or_default();
+            (meta.len(), ext)
+        };
+        let mtime = meta.modified().ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        entries.push(FolderEntry { name, is_dir, size, mtime, ext });
+    }
+    entries.sort_by(|a, b| {
+        if a.is_dir != b.is_dir { b.is_dir.cmp(&a.is_dir) }
+        else { a.name.cmp(&b.name) }
+    });
+    Ok(FolderListing { rel_path, entries })
+}
+
+#[tauri::command]
+fn folder_create(rel_path: String, name: String) -> Result<(), String> {
+    let root = folders_root_static()?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let child = parent.join(sanitize_name(&name)?);
+    if child.exists() {
+        return Err("同名文件夹已存在".to_string());
+    }
+    fs::create_dir_all(&child)
+        .map_err(|e| format!("创建文件夹失败: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn item_rename(rel_path: String, old_name: String, new_name: String) -> Result<(), String> {
+    let root = folders_root_static()?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let src = parent.join(&old_name);
+    let dst = parent.join(sanitize_name(&new_name)?);
+    if !src.exists() { return Err("源项目不存在".to_string()); }
+    if dst.exists() { return Err("目标名称已存在".to_string()); }
+    fs::rename(&src, &dst).map_err(|e| format!("重命名失败: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn item_delete(rel_path: String, name: String) -> Result<(), String> {
+    let root = folders_root_static()?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let target = parent.join(&name);
+    if !target.exists() { return Err("目标不存在".to_string()); }
+    if target.is_dir() { fs::remove_dir_all(&target) } else { fs::remove_file(&target) }
+        .map_err(|e| format!("删除失败: {}", e))?;
+    Ok(())
+}
+
+// ── 批量删除：forEach 调与 item_delete 相同的递归删除，返回成功删除数 ──
+#[tauri::command]
+fn item_delete_many(rel_path: String, names: Vec<String>) -> Result<u32, String> {
+    let root = folders_root_static()?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let mut count: u32 = 0;
+    for name in names {
+        let target = parent.join(&name);
+        if !target.exists() { continue; }
+        if target.is_dir() { fs::remove_dir_all(&target) } else { fs::remove_file(&target) }
+            .map_err(|e| format!("删除「{}」失败: {}", name, e))?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+#[tauri::command]
+fn item_move(rel_src: String, name: String, rel_dst: String) -> Result<(), String> {
+    let root = folders_root_static()?;
+    let src_parent = resolve_in_folders(&root, &rel_src)?;
+    let dst_parent = resolve_in_folders(&root, &rel_dst)?;
+    let src = src_parent.join(&name);
+    let dst = dst_parent.join(&name);
+    if !src.exists() { return Err("源项目不存在".to_string()); }
+    if dst.exists() { return Err("目标位置已存在同名项目".to_string()); }
+    fs::rename(&src, &dst).map_err(|e| format!("移动失败: {}", e))?;
+    Ok(())
+}
+
+// ── 复制：递归复制文件/文件夹，目标同名时自动加「 - 副本」后缀 ──
+fn copy_tree(src: &Path, dst: &Path) -> Result<(), String> {
+    if src.is_dir() {
+        fs::create_dir_all(dst).map_err(|e| format!("创建目录失败: {}", e))?;
+        for entry in fs::read_dir(src).map_err(|e| format!("读取目录失败: {}", e))? {
+            let e = entry.map_err(|e| format!("读取目录失败: {}", e))?;
+            let p = e.path();
+            copy_tree(&p, &dst.join(e.file_name()))?;
+        }
+        Ok(())
+    } else {
+        fs::copy(src, dst).map_err(|e| format!("复制失败: {}", e))?;
+        Ok(())
+    }
+}
+
+// 目标已存在同名时生成「name - 副本」「name - 副本 (2)」… 避免覆盖
+fn unique_copy_name(dst_parent: &Path, base: &str) -> PathBuf {
+    let cand = dst_parent.join(base);
+    if !cand.exists() { return cand; }
+    let (stem, ext) = match base.rfind('.') {
+        Some(i) if i > 0 => (base[..i].to_string(), base[i..].to_string()),
+        _ => (base.to_string(), String::new()),
+    };
+    let mut n: u32 = 1;
+    loop {
+        let nm = if n == 1 {
+            format!("{} - 副本{}", stem, ext)
+        } else {
+            format!("{} - 副本 ({}){}", stem, n, ext)
+        };
+        let c = dst_parent.join(nm);
+        if !c.exists() { return c; }
+        n += 1;
+    }
+}
+
+#[tauri::command]
+fn item_copy(rel_src: String, name: String, rel_dst: String) -> Result<(), String> {
+    let root = folders_root_static()?;
+    let src_parent = resolve_in_folders(&root, &rel_src)?;
+    let dst_parent = resolve_in_folders(&root, &rel_dst)?;
+    let src = src_parent.join(&name);
+    if !src.exists() { return Err("源项目不存在".to_string()); }
+    // 防穿越：不能把文件夹复制到自身内部（会造成无限递归）
+    let src_canon = fs::canonicalize(&src).map_err(|e| format!("路径解析失败: {}", e))?;
+    let dst_canon = fs::canonicalize(&dst_parent).map_err(|e| format!("路径解析失败: {}", e))?;
+    if dst_canon.starts_with(&src_canon) {
+        return Err("不能复制到自身内部".to_string());
+    }
+    let dst = unique_copy_name(&dst_parent, &name);
+    if src.is_dir() {
+        copy_tree(&src, &dst)?;
+    } else {
+        fs::copy(&src, &dst).map_err(|e| format!("复制失败: {}", e))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn pick_files() -> Option<Vec<String>> {
+    rfd::FileDialog::new()
+        .pick_files()
+        .map(|v| v.iter().map(|p| p.to_string_lossy().to_string()).collect())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn pick_files() -> Option<Vec<String>> { None }
+
+#[tauri::command]
+fn import_files(paths: Vec<String>, rel_dst: String) -> Result<u32, String> {
+    let root = folders_root_static()?;
+    let dst_dir = resolve_in_folders(&root, &rel_dst)?;
+    fs::create_dir_all(&dst_dir)
+        .map_err(|e| format!("创建目标目录失败: {}", e))?;
+    let mut count: u32 = 0;
+    for p in paths {
+        let src = PathBuf::from(&p);
+        if !src.exists() { continue; }
+        let name = match src.file_name() {
+            Some(n) => n.to_string_lossy().to_string(),
+            None => continue,
+        };
+        // 同名不覆盖：文件/文件夹都自动加「 - 副本」后缀（拖入/上传更安全）
+        let dst = unique_copy_name(&dst_dir, &name);
+        if src.is_file() {
+            fs::copy(&src, &dst)
+                .map_err(|e| format!("复制 {} 失败: {}", name, e))?;
+        } else if src.is_dir() {
+            copy_tree(&src, &dst)
+                .map_err(|e| format!("复制文件夹 {} 失败: {}", name, e))?;
+        } else {
+            continue;
+        }
+        count += 1;
+    }
+    Ok(count)
+}
+
+#[cfg(not(target_os = "android"))]
+fn open_path_default(path: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let r = std::process::Command::new("cmd")
+        .arg("/C").arg("start").arg("").arg(path)
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let r = std::process::Command::new("open").arg(path).spawn();
+    #[cfg(target_os = "linux")]
+    let r = std::process::Command::new("xdg-open").arg(path).spawn();
+    r.map_err(|e| format!("打开失败: {}", e)).map(|_| ())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn file_open(rel_path: String, name: String) -> Result<(), String> {
+    let root = folders_root_static()?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let target = parent.join(&name);
+    if !target.is_file() { return Err("文件不存在".to_string()); }
+    let path_str = target.to_string_lossy().to_string();
+    open_path_default(&path_str)
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    let root = folders_root_static()?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let target = parent.join(&name);
+    if !target.is_file() { return Err("文件不存在".to_string()); }
+    let path_str = target.to_string_lossy().to_string();
+    // 移动端通过系统 Intent 调起已安装应用打开文件（Word / PDF 等）。
+    // 注：Android 对应用私有目录有访问限制，若真机打不开需在 Tauri 侧做
+    // FileProvider / 缓存拷贝适配（待真机验证后迭代）。
+    app.shell().open(path_str, None).map_err(|e| format!("打开失败: {}", e))
+}
+
+// Android 专用：dialog 选中的文件是 content:// URI，std::fs 读不了；
+// 但 dialog 已把它加入 tauri-plugin-fs 的 scope，故用 app.fs().read() 读取后写入应用目录。
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn import_file_from_uri(app: tauri::AppHandle, uri: String, name: String, rel_dst: String) -> Result<u32, String> {
+    use tauri_plugin_fs::{FsExt, FilePath};
+    use std::str::FromStr;
+    let fp = FilePath::from_str(&uri).map_err(|e| format!("无效路径: {}", e))?;
+    let bytes = app.fs().read(fp).map_err(|e| format!("读取文件失败: {}", e))?;
+    let root = folders_root_static()?;
+    let dst_dir = resolve_in_folders(&root, &rel_dst)?;
+    std::fs::create_dir_all(&dst_dir).map_err(|e| format!("创建目标目录失败: {}", e))?;
+    let dst = unique_copy_name(&dst_dir, &name);
+    std::fs::write(&dst, &bytes).map_err(|e| format!("写入失败: {}", e))?;
+    Ok(1)
+}
+
+// ── 文件夹云同步（复用 S3 签名逻辑，文件以二进制 PUT，不经过 JS 层） ──
+
+async fn s3_put_bytes(app: &tauri::AppHandle, key: &str, bytes: &[u8]) -> Result<(), String> {
+    let config = read_s3_config(app).ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
+    let url = format!("{}/{}/{}", config.endpoint.trim_end_matches('/'), config.bucket, key);
+    let parsed = reqwest::Url::parse(&url).map_err(|e| format!("URL parse error: {}", e))?;
+    if parsed.scheme() != "https" { return Err("仅支持 HTTPS 端点".to_string()); }
+    let host = parsed.host_str().ok_or("Invalid host")?;
+    let host_with_port = if let Some(port) = parsed.port() {
+        format!("{}:{}", host, port)
+    } else { host.to_string() };
+    let now = chrono::Utc::now();
+    let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
+    let date_stamp = now.format("%Y%m%d").to_string();
+    let payload_hash = sha256_hex(bytes);
+    let canonical_uri = parsed.path().to_string();
+    let inv_id = format!("{}-{}", SDK_INVOCATION_PREFIX, Uuid::new_v4().as_simple());
+    let canonical_headers = format!(
+        "accept-encoding:identity\namz-sdk-invocation-id:{}\namz-sdk-request:{}\nhost:{}\nx-amz-content-sha256:{}\nx-amz-date:{}\n",
+        inv_id, SDK_REQUEST, host_with_port, payload_hash, amz_date
+    );
+    let signed_headers = "accept-encoding;amz-sdk-invocation-id;amz-sdk-request;host;x-amz-content-sha256;x-amz-date";
+    let canonical_request = format!(
+        "{}\n{}\n{}\n{}\n{}\n{}",
+        "PUT", canonical_uri, "", canonical_headers, signed_headers, payload_hash
+    );
+    let credential_scope = format!("{}/{}/s3/aws4_request", date_stamp, config.region);
+    let string_to_sign = format!(
+        "AWS4-HMAC-SHA256\n{}\n{}\n{}",
+        amz_date, credential_scope, sha256_hex(canonical_request.as_bytes())
+    );
+    let k_date = hmac_sha256(format!("AWS4{}", config.secret_key).as_bytes(), date_stamp.as_bytes())?;
+    let k_region = hmac_sha256(&k_date, config.region.as_bytes())?;
+    let k_service = hmac_sha256(&k_region, b"s3")?;
+    let k_signing = hmac_sha256(&k_service, b"aws4_request")?;
+    let signature = hmac_sha256_hex(&k_signing, string_to_sign.as_bytes())?;
+    let authorization = format!(
+        "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
+        config.access_key, credential_scope, signed_headers, signature
+    );
+    let client = build_http_client()?;
+    let resp = add_s3_headers(client.put(&url), &host_with_port, &authorization, &amz_date, &payload_hash, &inv_id)
+        .body(bytes.to_vec())
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    if resp.status().is_success() { Ok(()) } else {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        Err(format!("HTTP {}: {}", status, body))
+    }
+}
+
+fn collect_rel_files(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("读取目录失败: {}", e))? {
+        let entry = match entry { Ok(e) => e, Err(_) => continue };
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rel_files(root, &path, out)?;
+        } else {
+            let rel = path.strip_prefix(root)
+                .map_err(|_| "路径处理失败".to_string())?
+                .to_string_lossy().replace('\\', "/");
+            out.push(rel);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn folder_cloud_push(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let root = folders_root_static()?;
+    let mut rels: Vec<String> = Vec::new();
+    collect_rel_files(&root, &root, &mut rels)?;
+    let mut uploaded: u32 = 0;
+    for rel in rels {
+        let path = root.join(&rel);
+        let bytes = fs::read(&path).map_err(|e| format!("读取 {} 失败: {}", rel, e))?;
+        let key = format!("folders/{}", rel.replace('\\', "/"));
+        s3_put_bytes(&app, &key, &bytes).await?;
+        uploaded += 1;
+    }
+    Ok(serde_json::json!({ "uploaded": uploaded }))
+}
+
+fn parse_s3_keys(xml: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    let mut start = 0;
+    while let Some(i) = xml[start..].find("<Key>") {
+        let abs = start + i + 5;
+        if let Some(j) = xml[abs..].find("</Key>") {
+            keys.push(xml[abs..abs + j].to_string());
+            start = abs + j + 6;
+        } else { break; }
+    }
+    keys
+}
+
+#[tauri::command]
+async fn folder_cloud_pull(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let config = read_s3_config(&app).ok_or("S3 配置未设置，请先在云同步面板保存配置")?;
+    let base = format!("{}/{}", config.endpoint.trim_end_matches('/'), config.bucket);
+    let prefix = "folders%2F";
+    let list_url = format!("{}?list-type=2&prefix={}", base, prefix);
+    let parsed = reqwest::Url::parse(&list_url).map_err(|e| format!("URL parse error: {}", e))?;
+    let host = parsed.host_str().ok_or("Invalid host")?;
+    let host_with_port = if let Some(p) = parsed.port() {
+        format!("{}:{}", host, p)
+    } else { host.to_string() };
+    let (auth, date, payload_hash, inv_id) = build_s3_auth(
+        "GET", &list_url, &config.access_key, &config.secret_key, &config.region, None,
+        &format!("list-type=2&prefix={}", prefix),
+    )?;
+    let client = build_http_client()?;
+    let resp = add_s3_headers(client.get(&list_url), &host_with_port, &auth, &date, &payload_hash, &inv_id)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("列举对象失败 HTTP {}: {}", status, body));
+    }
+    let xml = resp.text().await.map_err(|e| format!("读取列表失败: {}", e))?;
+    let keys = parse_s3_keys(&xml);
+    let root = folders_root_static()?;
+    let mut downloaded: u32 = 0;
+    for key in keys {
+        if !key.starts_with("folders/") { continue; }
+        let url = format!("{}/{}", base, key);
+        let (auth2, date2, ph2, inv2) = build_s3_auth(
+            "GET", &url, &config.access_key, &config.secret_key, &config.region, None, "",
+        )?;
+        let resp2 = add_s3_headers(client.get(&url), &host_with_port, &auth2, &date2, &ph2, &inv2)
+            .send()
+            .await
+            .map_err(|e| format!("下载 {} 失败: {}", key, e))?;
+        if !resp2.status().is_success() { continue; }
+        let bytes = resp2.bytes().await.map_err(|e| format!("读取 {} 失败: {}", key, e))?;
+        let rel = key.trim_start_matches("folders/");
+        if rel.is_empty() { continue; } // 跳过 "folders/" 这类目录标记
+        let dst = root.join(rel);
+        // 防御：落点必须仍在 folders 根目录内，避免 key 被构造出路径穿越
+        if !dst.starts_with(&root) { continue; }
+        if let Some(p) = dst.parent() { let _ = fs::create_dir_all(p); }
+        if let Err(e) = fs::write(&dst, &bytes) {
+            eprintln!("[Cloud] 写入 {} 失败，已跳过: {}", rel, e);
+            continue;
+        }
+        downloaded += 1;
+    }
+    Ok(serde_json::json!({ "downloaded": downloaded }))
+}
+
 #[tauri::command]
 fn exit_app(app: tauri::AppHandle) {
     eprintln!("[Tauri] 正在退出应用...");
@@ -652,6 +1117,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if !ALLOW_EXIT.load(Ordering::SeqCst) {
@@ -720,7 +1186,20 @@ pub fn run() {
             s3_test,
             exit_app,
             db_execute,
-            write_file
+            write_file,
+            folder_list,
+            folder_create,
+            item_rename,
+            item_delete,
+            item_delete_many,
+            item_move,
+            item_copy,
+            pick_files,
+            import_files,
+            file_open,
+            import_file_from_uri,
+            folder_cloud_push,
+            folder_cloud_pull
         ])
         .run(tauri::generate_context!())
         .expect("启动失败");
