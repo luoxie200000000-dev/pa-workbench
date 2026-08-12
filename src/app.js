@@ -1472,11 +1472,10 @@ function renderCloudSectionTree(prefix, selected, sectionClassMap) {
   var scMap = sectionClassMap || {};
   var allClasses = getClasses();
   return CLOUD_SECTIONS.map(function(g) {
-    // 默认折叠，但若该分组里有已勾选的 leaf（来自 selected 或默认 DEFAULT），则默认展开——
-    // 避免用户看不到"学生成绩分析/修仙档案"等关键栏目，导致以为没传。
+    // 默认展开，确保外层「自动上传栏目 / 自动下载栏目」展开后能看到五个子栏目的勾选项；
+    // 仅当用户手动点击某分组标题折叠过（记在 _cloudCollapsed）时才收起，不再按「是否勾选」决定。
     var userCollapsed = _cloudCollapsed[g.id];
-    var hasChecked = g.children.some(function(c) { return selSet[c.key]; });
-    var collapsed = userCollapsed !== undefined ? userCollapsed : !hasChecked;
+    var collapsed = userCollapsed !== undefined ? userCollapsed : false;
     var itemsHtml = collapsed ? '' : g.children.map(function(c) {
       var cid = 'cloud-' + prefix + '-' + c.key;
       var checked = selSet[c.key] ? ' checked' : '';
