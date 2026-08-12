@@ -2963,8 +2963,8 @@ async function renderFolder(area) {
     '.folder-breadcrumb .crumb-link:hover{text-decoration:underline;color:var(--primary-darker);}' +
     '.folder-breadcrumb .crumb-sep{color:var(--text-muted);margin:0 4px;}' +
     '.folder-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}' +
-    '.folder-list{padding:0 4px 8px;}' +
-    '.folder-row{display:flex;align-items:center;gap:10px;padding:7px 36px 7px 10px;border-radius:4px;position:relative;}' +
+    '.folder-list{padding:0 4px 8px;overflow-x:auto;-webkit-overflow-scrolling:touch;}' +
+    '.folder-row{display:flex;align-items:center;gap:10px;padding:7px 36px 7px 10px;border-radius:4px;position:relative;min-width:520px;}' +
     '.folder-row:not(.folder-row-header){border-bottom:1px solid #f0f0f0;}' +
     '.folder-row:hover:not(.folder-row-header){background:#f5f7fa;}' +
     '.folder-row.selected{background:#e6f0ff !important;}' +
