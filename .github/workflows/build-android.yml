@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   android:
@@ -46,6 +47,22 @@ jobs:
 
       - name: Init Tauri Android
         run: npx tauri android init
+
+      - name: Pre-fetch Gradle distribution (retry on transient network blips)
+        working-directory: src-tauri/gen/android
+        run: |
+          chmod +x gradlew
+          for i in $(seq 1 10); do
+            echo "=== gradle fetch attempt $i ==="
+            if ./gradlew --version >/dev/null 2>&1; then
+              echo "GRADLE_READY"
+              break
+            fi
+            echo "attempt $i failed, cleaning partial download and retrying..."
+            rm -rf "$HOME/.gradle/wrapper/dists" || true
+            sleep 8
+          done
+          ./gradlew --version
 
       - name: First build (populate gen/android with Tauri default icons)
         run: npx tauri android build --apk --debug --target aarch64
