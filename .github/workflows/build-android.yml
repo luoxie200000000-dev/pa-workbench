@@ -47,6 +47,18 @@ jobs:
       - name: Init Tauri Android
         run: npx tauri android init
 
+      - name: Sync custom launcher icons into Android res
+        # tauri android init 会从 Tauri 模板覆盖 gen/android/app/src/main/res/ 里的 mipmap 为默认 logo；
+        # 这里把仓库内 src-tauri/icons/android/ 自定义图标（来自 `tauri icon`）再覆盖回去，否则手机图标仍是 Tauri 默认。
+        run: |
+          if [ -d src-tauri/icons/android ]; then
+            mkdir -p src-tauri/gen/android/app/src/main/res
+            cp -r src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
+            echo "Synced $(find src-tauri/icons/android -type f | wc -l) files into gen/android/app/src/main/res/"
+          else
+            echo "WARN: src-tauri/icons/android not found, skipping custom icon sync"
+          fi
+
       - name: Build APK (debug signed, arm64 only)
         run: npx tauri android build --apk --debug --target aarch64
 
