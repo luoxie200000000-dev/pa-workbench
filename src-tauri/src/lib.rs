@@ -945,17 +945,44 @@ fn file_reveal(app: tauri::AppHandle, rel_path: String, name: String) -> Result<
     }
 }
 
+// ── Inline Android plugin：安全打开私有目录文件（FileProvider + MIME + 预检）──
+// Tauri 在 `tauri android build` 时会把 src-tauri/src/android 下的 Kotlin 集成进 APK；
+// register_android_plugin 的包名/类名必须与 Kotlin 类一致。
+#[cfg(target_os = "android")]
+mod safe_opener {
+    use tauri::plugin::{Builder, TauriPlugin};
+    use tauri::Runtime;
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SafeOpenPayload {
+        pub path: String,
+    }
+
+    pub fn init<R: Runtime>() -> TauriPlugin<R> {
+        Builder::<R>::new("safe-opener")
+            .setup(|_app, api| {
+                api.register_android_plugin("com.pdx.workbuddy", "SafeOpenerPlugin")?;
+                Ok(())
+            })
+            .build()
+    }
+}
+
 #[cfg(target_os = "android")]
 #[tauri::command]
 fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
-    use tauri_plugin_opener::OpenerExt;
     let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let target = parent.join(sanitize_name(&name)?);
     if !target.is_file() { return Err("文件不存在".to_string()); }
     let path_str = target.to_string_lossy().to_string();
-    // 移动端通过系统 Intent 调起已安装应用打开文件（Word / PDF 等）。
-    app.opener().open_path(path_str, None::<&str>).map_err(|e| format!("打开失败: {}", e))
+    // 移动端走自定义 SafeOpenerPlugin：用 FileProvider 把私有文件转 content:// 并带 MIME
+    // 调起系统应用，避免裸 file:// 触发 StrictMode 杀进程（整 App 闪退）。
+    let payload = safe_opener::SafeOpenPayload { path: path_str };
+    app.plugin_handle("safe-opener")
+        .run_mobile_plugin("safeOpen", payload)
+        .map_err(|e| format!("打开失败: {}", e))
 }
 
 // Android 专用：dialog 选中的文件是 content:// URI，std::fs 读不了；
@@ -1167,10 +1194,13 @@ pub fn run() {
         },
     ];
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_fs::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(safe_opener::init());
+    builder
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if !ALLOW_EXIT.load(Ordering::SeqCst) {
