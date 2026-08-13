@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  actions: read
+  contents: write
 
 jobs:
   android:
@@ -35,7 +34,7 @@ jobs:
       - name: Setup Rust targets
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -78,7 +77,7 @@ jobs:
           ls -l "$DST"
 
       - name: First build (populate gen/android with Tauri default icons)
-        run: npx tauri android build --apk --debug --target aarch64
+        run: npx tauri android build --apk --debug
 
       - name: Inject custom launcher icons (overwrite Tauri defaults in gen)
         # Tauri re-generates the launcher icons during the build, so we do a first
@@ -110,7 +109,7 @@ jobs:
           find "$RES" -name "ic_launcher_foreground.png" -exec md5sum {} \;
 
       - name: Rebuild APK (keeps custom icons)
-        run: npx tauri android build --apk --debug --target aarch64
+        run: npx tauri android build --apk --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -118,3 +117,25 @@ jobs:
           name: pa-workbench-apk
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: warn
+
+      - name: Create GitHub Release (APK + Windows installer)
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v2.3.1
+          name: 派大星 v2.3.1（修复启动闪退 / 文件打开）
+          body: |
+            ## 派大星 v2.3.1 修复版
+
+            ### 本次修复
+            - **Android 启动不再闪退**：`safe_opener` 插件注册改为非致命，注册失败不再中止 App 启动（此前点图标即闪退的根因）
+            - **文件打开恢复可用**：注册 `tauri_plugin_opener` 插件，修复桌面/移动端双击打开文件、属性弹窗“在文件管理器中打开”失效的问题
+            - **打开私有文件不再崩溃**：Android 走 FileProvider 安全打开，无对应 App 时弹提示而非杀进程
+
+            ### 下载
+            - `*.apk` — Android 安装包（universal，兼容 arm64 / arm32 / x86_64）
+            - `派大星_2.3.1_x64-setup.exe` — Windows 安装包
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            dist-windows/*.exe
+          skip_if_release_exists: true
