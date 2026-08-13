@@ -1,0 +1,22 @@
+{
+  "name": "workbuddy",
+  "private": true,
+  "version": "2.3.3",
+  "type": "module",
+  "scripts": {
+    "concat": "node scripts/concat-modules.cjs",
+    "concat:watch": "node scripts/concat-modules.cjs --watch",
+    "dev": "npm run concat && vite",
+    "build": "npm run concat && vite build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "vite": "^6"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-sql": "^2.4.0",
+    "chart.js": "^4.4.0"
+  }
+}

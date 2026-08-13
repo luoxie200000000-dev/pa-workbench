@@ -1,0 +1,213 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-build
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "27.0.12077973"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android components (API 35 = Android 15, latest)
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Setup Rust targets (only arm64 — covers all modern Android devices)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: src-tauri -> target
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Init Tauri Android
+        run: npx tauri android init
+
+      - name: Force compileSdkVersion 35 (Android 15)
+        # tauri android init 默认可能用 API 34，强制改成 35 确保编译目标最新
+        run: |
+          set -e
+          GRADLE=src-tauri/gen/android/app/build.gradle.kts
+          if [ -f "$GRADLE" ]; then
+            sed -i 's/compileSdkVersion.*=.*[0-9]\+/compileSdkVersion = 35/' "$GRADLE" || true
+            echo "=== compileSdkVersion line ==="
+            grep -n "compileSdk" "$GRADLE" || echo "(not found, may use default)"
+          else
+            echo "WARNING: $GRADLE not found"
+          fi
+
+      - name: Pre-fetch Gradle distribution (retry on transient network blips)
+        working-directory: src-tauri/gen/android
+        run: |
+          chmod +x gradlew
+          for i in $(seq 1 10); do
+            echo "=== gradle fetch attempt $i ==="
+            if ./gradlew --version >/dev/null 2>&1; then
+              echo "GRADLE_READY"
+              break
+            fi
+            echo "attempt $i failed, cleaning partial download and retrying..."
+            rm -rf "$HOME/.gradle/wrapper/dists" || true
+            sleep 8
+          done
+          ./gradlew --version
+
+      - name: First build (populate gen/android — arm64 ONLY)
+        run: npx tauri android build --apk --debug --target aarch64
+
+      - name: Inject custom launcher icons
+        run: |
+          set -e
+          RES=src-tauri/gen/android/app/src/main/res
+          echo "=== res tree before inject ==="
+          ls -R "$RES" | head -40 || echo "no res"
+          echo "=== overwriting with custom icons ==="
+          cp -rf src-tauri/icons/android/. "$RES/"
+          cat > "$RES/drawable-v24/ic_launcher_foreground.xml" <<'XML'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+            <group android:translateX="0" android:translateY="0">
+              <scale android:scaleX="1.0" android:scaleY="1.0" android:translateX="0" android:translateY="0"/>
+              <bitmap android:src="@mipmap/ic_launcher_foreground"
+                      android:gravity="center"/>
+            </group>
+          </vector>
+          XML
+          echo "=== res tree after inject ==="
+          ls -R "$RES/mipmap-xxxhdpi" | head
+          find "$RES" -name "ic_launcher_foreground.png" -exec md5sum {} \;
+
+      - name: Inject FileProvider plugin (Kotlin + provider for chooser open)
+        run: |
+          set -e
+          chmod +x src-tauri/android-inject/inject.py
+          python3 src-tauri/android-inject/inject.py
+          echo "=== gen/java tree ==="
+          find src-tauri/gen/android/app/src/main/java -type f
+          echo "=== file_paths.xml head ==="
+          head -3 src-tauri/gen/android/app/src/main/res/xml/file_paths.xml
+          echo "=== AndroidManifest.xml tail ==="
+          tail -15 src-tauri/gen/android/app/src/main/AndroidManifest.xml
+
+      - name: Build APK (arm64 ONLY, release split-per-abi)
+        run: npx tauri android build --apk --split-per-abi --target aarch64
+
+      - name: Pick arm64-v8a release APK, zipalign, sign with debug keystore
+        run: |
+          set -e
+
+          KEY="$HOME/.android/debug.keystore"
+          if [ ! -f "$KEY" ]; then
+            echo "generating debug keystore at $KEY..."
+            mkdir -p "$(dirname "$KEY")"
+            keytool -genkeypair -v -keystore "$KEY" -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          echo "keystore: $KEY"
+          ls -lh "$KEY"
+
+          OUT=src-tauri/gen/android/app/build/outputs
+          SRC=$(find "$OUT" -name "app-arm64-v8a-release-unsigned.apk" | head -1)
+          if [ -z "$SRC" ]; then
+            echo "ERROR: app-arm64-v8a-release-unsigned.apk not found, listing all apks:"
+            find "$OUT" -name "*.apk" -type f
+            exit 1
+          fi
+          echo "found arm64 release unsigned: $SRC"
+          ls -lh "$SRC"
+
+          APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          ZIPALIGN=$(ls -1 "$ANDROID_HOME"/build-tools/*/zipalign 2>/dev/null | sort -V | tail -1)
+          echo "using apksigner: $APKSIGNER"
+          echo "using zipalign:  $ZIPALIGN"
+
+          "$ZIPALIGN" -p -f 4 "$SRC" aligned.apk
+          "$APKSIGNER" sign \
+            --ks "$KEY" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android \
+            --out pa-workbench-v2.3.3-arm64.apk aligned.apk
+          echo "signed apk:"
+          ls -lh pa-workbench-v2.3.3-arm64.apk
+          "$APKSIGNER" verify pa-workbench-v2.3.3-arm64.apk && echo "verify OK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pa-workbench-apk
+          path: pa-workbench-v2.3.3-arm64.apk
+          if-no-files-found: error
+
+      - name: Clean old APK assets from existing v2.3.3 release (if re-run)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/v2.3.3" --jq '.id' 2>/dev/null || echo "")
+          if [ -n "$REL_ID" ] && [ "$REL_ID" != "null" ]; then
+            echo "release id=$REL_ID, removing existing apk assets..."
+            gh api "repos/${{ github.repository }}/releases/$REL_ID/assets" --jq '.[].id' \
+              | while read -r AID; do
+                  echo "delete asset $AID"
+                  gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$AID" || true
+                done
+          else
+            echo "no existing v2.3.3 release, skip cleanup"
+          fi
+
+      - name: Create GitHub Release (arm64 APK only)
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v2.3.3
+          name: 派大星 v2.3.3（arm64 单包，适配 Android 15）
+          body: |
+            ## 派大星 v2.3.3
+
+            ### 本次修复 / 优化
+            - **文件夹搜索改为递归搜索**：搜索时遍历当前文件夹及所有子文件夹，不再只搜当前层级
+            - **Android 双击打开文件修复**：修正 FileProviderPlugin 包名注册，文件可正常打开
+            - **Android 文件属性弹窗"打开文件"修复**：改用 FileProvider + Intent.createChooser，微信式选择器打开
+            - **Clippy 零警告**：修复冗余闭包警告
+            - **目标 SDK 升级至 API 35（Android 15）**：只构建 arm64 单包，适配最新安卓系统
+
+            ### 下载
+            - `pa-workbench-v2.3.3-arm64.apk` — 安卓安装包（arm64 单包，约 17 MB，已用 debug keystore 签名可直接装）
+          files: |
+            pa-workbench-v2.3.3-arm64.apk

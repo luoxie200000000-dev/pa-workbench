@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 路径白名单。
+
+  Tauri Android 把 BaseDirectory::AppData 解析到 Context.getDir("data")，
+  即 /data/data/com.pdx.workbuddy/data/ 子目录；"05 文件夹"里的文件都放这里。
+
+  AndroidX FileProvider 的标准 path 类型（files-path / cache-path / external-*
+  等）都对应不到 getDir("data")，只能用 root-path 精确映射该子目录。
+  minSdkVersion=30（API 21+）支持 root-path；用绝对路径限定到本应用私有数据目录，
+  不会暴露其他应用数据。
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <root-path
+        name="appdata"
+        path="/data/data/com.pdx.workbuddy/data/" />
+</paths>

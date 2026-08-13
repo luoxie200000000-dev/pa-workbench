@@ -1,0 +1,13 @@
+<!--
+  AndroidManifest <application> 内的 <provider> 片段。
+  CI 注入步骤会把它插入到 </application> 之前。
+-->
+<provider
+    android:name="androidx.core.content.FileProvider"
+    android:authorities="com.pdx.workbuddy.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
+</provider>
