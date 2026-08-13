@@ -950,7 +950,7 @@ fn file_reveal(app: tauri::AppHandle, rel_path: String, name: String) -> Result<
 // register_android_plugin 的包名/类名必须与 Kotlin 类一致。
 #[cfg(target_os = "android")]
 mod safe_opener {
-    use tauri::plugin::{Builder, TauriPlugin};
+    use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
     use tauri::Runtime;
 
     #[derive(serde::Serialize)]
@@ -959,10 +959,17 @@ mod safe_opener {
         pub path: String,
     }
 
+    // 把移动端插件的 PluginHandle 存进 app state，供 file_open 命令跨模块调用。
+    pub struct SafeOpenerHandle<R: Runtime>(pub PluginHandle<R>);
+
     pub fn init<R: Runtime>() -> TauriPlugin<R> {
         Builder::<R>::new("safe-opener")
-            .setup(|_app, api| {
-                api.register_android_plugin("com.pdx.workbuddy", "SafeOpenerPlugin")?;
+            .setup(|app, api| {
+                // register_android_plugin 会把 src-tauri/src/android 下的 Kotlin 集成进 APK，
+                // 并返回 PluginHandle，用它来调用 safeOpen 命令。
+                let handle =
+                    api.register_android_plugin("com.pdx.workbuddy", "SafeOpenerPlugin")?;
+                app.manage(SafeOpenerHandle(handle));
                 Ok(())
             })
             .build()
@@ -980,9 +987,12 @@ fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<()
     // 移动端走自定义 SafeOpenerPlugin：用 FileProvider 把私有文件转 content:// 并带 MIME
     // 调起系统应用，避免裸 file:// 触发 StrictMode 杀进程（整 App 闪退）。
     let payload = safe_opener::SafeOpenPayload { path: path_str };
-    app.plugin_handle("safe-opener")
-        .run_mobile_plugin("safeOpen", payload)
-        .map_err(|e| format!("打开失败: {}", e))
+    let handle = app.state::<safe_opener::SafeOpenerHandle<tauri::Wry>>();
+    handle
+        .0
+        .run_mobile_plugin::<serde_json::Value>("safeOpen", payload)
+        .map_err(|e| format!("打开失败: {}", e))?;
+    Ok(())
 }
 
 // Android 专用：dialog 选中的文件是 content:// URI，std::fs 读不了；
