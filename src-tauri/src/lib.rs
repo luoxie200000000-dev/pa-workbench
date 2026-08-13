@@ -917,7 +917,7 @@ fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<()
     if !target.is_file() { return Err("文件不存在".to_string()); }
     let path_str = target.to_string_lossy().to_string();
     // 移动端通过系统 Intent 调起已安装应用打开文件（Word / PDF 等）。
-    app.opener().open_path(path_str, None).map_err(|e| format!("打开失败: {}", e))
+    app.opener().open_path(path_str, None::<&str>).map_err(|e| format!("打开失败: {}", e))
 }
 
 // Android 专用：dialog 选中的文件是 content:// URI，std::fs 读不了；
