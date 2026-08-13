@@ -3618,44 +3618,53 @@ function showFilePropsModal(name, isDir) {
   if (old) old.remove();
   var overlay = document.createElement('div');
   overlay.id = 'filePropsModal';
-  overlay.className = 'cc-overlay';
-  overlay.style.zIndex = 10001;
+  overlay.className = 'fp-overlay';
   overlay.innerHTML =
-    '<div style="background:var(--surface);border-radius:14px;width:min(460px,92vw);max-height:86vh;overflow:auto;box-shadow:0 16px 50px rgba(0,0,0,.28);font-family:inherit">' +
-      '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--border-light)">' +
-        '<div style="font-size:22px">' + (isDir ? '📁' : '📄') + '</div>' +
-        '<div style="font-weight:700;font-size:16px;color:var(--text-heading);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="fpName"></div>' +
+    '<div class="fp-modal">' +
+      '<div class="fp-head">' +
+        '<div class="fp-icon">' + (isDir ? '📁' : '📄') + '</div>' +
+        '<div class="fp-name" id="fpName"></div>' +
+        '<button class="fp-close" id="fpClose" title="关闭" aria-label="关闭">✕</button>' +
       '</div>' +
-      '<div style="padding:14px 18px;font-size:13.5px;color:var(--text);line-height:1.9" id="fpBody">' +
-        '<div style="color:var(--text-muted)">正在读取属性…</div>' +
+      '<div class="fp-body" id="fpBody">' +
+        '<div class="fp-loading">正在读取属性</div>' +
+      '</div>' +
+      '<div class="fp-foot">' +
+        '<button class="fp-btn fp-btn-sec" id="fpCopy">📋 复制路径</button>' +
+        '<button class="fp-btn fp-btn-pri" id="fpReveal">📂 在文件管理器中打开</button>' +
       '</div>' +
     '</div>';
-  overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) overlay.remove(); });
-  document.body.appendChild(overlay);
-  var onKey = function (e) { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onKey); } };
+
+  function close() {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+  }
+  var onKey = function (e) { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) close(); });
+  document.body.appendChild(overlay);
+  var closeBtn = document.getElementById('fpClose');
+  if (closeBtn) closeBtn.onclick = close;
+  var nameEl0 = document.getElementById('fpName');
+  if (nameEl0) nameEl0.textContent = name;
 
   __invoke('file_props', { relPath: _folderRelPath, name: name })
     .then(function (p) {
       var sizeStr = p.is_dir ? '—（文件夹）' : formatBytes(p.size_bytes);
       var dateStr = p.mtime ? new Date(p.mtime * 1000).toLocaleString('zh-CN') : '—';
       var typeStr = p.is_dir ? '文件夹' : (p.ext ? (p.ext.toUpperCase() + ' 文件') : '文件');
-      var body = '';
-      body += fpRow('类型', typeStr);
-      body += fpRow('大小', sizeStr);
-      body += fpRow('修改时间', dateStr);
-      body += '<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 0 2px;border-top:1px solid var(--border-light);margin-top:6px">' +
-                '<div style="color:var(--text-muted);min-width:84px;flex-shrink:0">存储位置</div>' +
-                '<div style="flex:1">' +
-                  '<div id="fpPath" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all;color:var(--text);background:#f6f7f9;padding:6px 8px;border-radius:6px">' + escapeHtml(p.full_path) + '</div>' +
-                  '<div style="display:flex;gap:8px;margin-top:8px">' +
-                    '<button id="fpCopy" style="flex:1;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:13px">📋 复制路径</button>' +
-                    '<button id="fpReveal" style="flex:1;padding:7px;border:1px solid var(--primary);border-radius:7px;background:var(--primary);color:#fff;cursor:pointer;font-size:13px">📂 在文件管理器中打开</button>' +
-                  '</div>' +
-                '</div>' +
-              '</div>';
       var nameEl = document.getElementById('fpName'); if (nameEl) nameEl.textContent = p.name;
-      var bodyEl = document.getElementById('fpBody'); if (bodyEl) bodyEl.innerHTML = body;
+      var bodyEl = document.getElementById('fpBody');
+      if (bodyEl) bodyEl.innerHTML =
+        '<div class="fp-stats">' +
+          '<div class="fp-stat"><span>类型</span><b>' + escapeHtml(typeStr) + '</b></div>' +
+          '<div class="fp-stat"><span>大小</span><b>' + escapeHtml(sizeStr) + '</b></div>' +
+          '<div class="fp-stat"><span>修改时间</span><b>' + escapeHtml(dateStr) + '</b></div>' +
+        '</div>' +
+        '<div class="fp-path-box">' +
+          '<div class="fp-path-label">存储位置</div>' +
+          '<div class="fp-path" id="fpPath">' + escapeHtml(p.full_path) + '</div>' +
+        '</div>';
       var copyBtn = document.getElementById('fpCopy');
       if (copyBtn) copyBtn.onclick = function () {
         var txt = p.full_path;
@@ -3673,9 +3682,10 @@ function showFilePropsModal(name, isDir) {
     })
     .catch(function (err) {
       var bodyEl = document.getElementById('fpBody');
-      if (bodyEl) bodyEl.innerHTML = '<div style="color:#d33">读取属性失败：' + escapeHtml(String(err)) + '</div>';
+      if (bodyEl) bodyEl.innerHTML = '<div style="color:#9E1B14;padding:20px;font-family:SimSun,serif;font-size:13px">读取属性失败：' + escapeHtml(String(err)) + '</div>';
     });
 }
+
 function fpRow(k, v) {
   return '<div style="display:flex;gap:8px;padding:3px 0"><div style="color:var(--text-muted);min-width:84px;flex-shrink:0">' + k + '</div><div style="flex:1;word-break:break-all">' + escapeHtml(String(v)) + '</div></div>';
 }

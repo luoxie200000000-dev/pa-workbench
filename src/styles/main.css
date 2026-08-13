@@ -2770,3 +2770,44 @@ html.ui-mobile .score-table thead th:first-child { z-index: 3; }
 .sync-section-hint { font-size: 11px; color: var(--text-muted); }
 .sync-section-body { padding: 4px 0 0 0; }
 .sync-section-body[style*="display:none"] { display: none !important; }
+
+/* ===================== 文件属性弹窗 · 古风卷轴（朱砂·金·宣纸） ===================== */
+.fp-overlay{position:fixed;inset:0;background:radial-gradient(circle at center,rgba(30,20,8,.55),rgba(15,10,4,.7));display:flex;align-items:center;justify-content:center;z-index:10001;padding:18px;backdrop-filter:blur(3px);animation:fpFadeIn .18s ease-out}
+@keyframes fpFadeIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+.fp-modal{background:linear-gradient(165deg,#FCFAF1 0%,#F5F0E6 100%);border:1px solid #D4AF37;border-radius:10px;width:min(520px,94vw);max-height:88vh;display:flex;flex-direction:column;position:relative;font-family:'SimSun','NSimSun','Songti SC',serif;color:#2C3E3F;box-shadow:0 0 0 3px rgba(193,154,107,.25),0 24px 70px rgba(0,0,0,.4),inset 0 0 60px rgba(212,175,55,.06);overflow:hidden}
+.fp-modal::before{content:'';position:absolute;inset:6px;border:1px solid rgba(212,175,55,.35);border-radius:7px;pointer-events:none;z-index:1}
+.fp-head{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid #C19A6B;background:linear-gradient(180deg,#FCFAF1,#E8DFCA);position:relative;flex-shrink:0}
+.fp-head::after{content:'';position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(212,175,55,.5),transparent)}
+.fp-icon{width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:9px;background:linear-gradient(135deg,rgba(193,39,43,.12),rgba(212,175,55,.2));border:1px solid rgba(212,175,55,.4);font-size:24px;flex-shrink:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.4)}
+.fp-name{font-family:'KaiTi','STKaiti','Ma Shan Zheng',serif;font-weight:700;font-size:19px;color:#9E1B14;letter-spacing:1px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-shadow:0 1px 0 rgba(255,255,255,.5)}
+.fp-close{width:30px;height:30px;border-radius:7px;border:1px solid #C19A6B;background:linear-gradient(180deg,#FCFAF1,#E8DFCA);cursor:pointer;font-size:15px;color:#2C3E3F;display:flex;align-items:center;justify-content:center;font-family:inherit;transition:all .15s ease;box-shadow:0 1px 0 rgba(255,255,255,.5) inset;flex-shrink:0;line-height:1;padding:0}
+.fp-close:hover{background:linear-gradient(180deg,#F5E6C8,#D4B683);border-color:#D4AF37;color:#9E1B14;transform:scale(1.06);box-shadow:0 0 0 1px rgba(212,175,55,.3)}
+.fp-body{padding:16px 18px;overflow:auto;flex:1;min-height:0;position:relative;z-index:1;scrollbar-width:thin}
+.fp-body::-webkit-scrollbar{width:8px}
+.fp-body::-webkit-scrollbar-thumb{background:rgba(193,154,107,.5);border-radius:4px}
+.fp-body::-webkit-scrollbar-track{background:rgba(232,223,202,.3)}
+.fp-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.fp-stat{background:linear-gradient(165deg,#FCFAF1,#F0E8D4);border:1px solid #C19A6B;border-radius:7px;padding:11px 8px 9px;text-align:center;position:relative;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 2px 5px rgba(120,90,40,.1)}
+.fp-stat::before{content:'';position:absolute;inset:3px;border:1px solid rgba(193,154,107,.25);border-radius:4px;pointer-events:none}
+.fp-stat span{display:block;color:#5a6c6d;font-size:11px;font-family:'SimSun',serif;margin-bottom:4px;letter-spacing:2px}
+.fp-stat b{font-size:14px;color:#9E1B14;font-family:'KaiTi','STKaiti',serif;font-weight:700;word-break:break-all;line-height:1.3}
+.fp-path-box{border:1px solid #C19A6B;border-radius:7px;padding:10px 12px;background:linear-gradient(90deg,rgba(232,223,202,.85),rgba(245,240,230,.65),rgba(232,223,202,.85));box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 1px 2px rgba(120,90,40,.06)}
+.fp-path-label{font-size:11px;color:#5a6c6d;letter-spacing:2px;margin-bottom:6px;font-family:'SimSun',serif;display:flex;align-items:center;gap:6px}
+.fp-path-label::before{content:'';width:3px;height:12px;background:#5E9486;border-radius:2px}
+.fp-path{font-family:ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;font-size:12.5px;color:#2C3E3F;word-break:break-all;line-height:1.55;max-height:84px;overflow:auto;user-select:all;padding:4px 2px;scrollbar-width:thin}
+.fp-path::-webkit-scrollbar{width:6px;height:6px}
+.fp-path::-webkit-scrollbar-thumb{background:rgba(193,154,107,.5);border-radius:3px}
+.fp-path::-webkit-scrollbar-track{background:rgba(232,223,202,.3)}
+.fp-foot{display:flex;gap:10px;padding:13px 18px;border-top:1px solid #C19A6B;background:linear-gradient(0deg,#E8DFCA,#F5F0E6);position:relative;flex-shrink:0}
+.fp-foot::before{content:'';position:absolute;left:0;right:0;top:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(212,175,55,.5),transparent)}
+.fp-btn{flex:1;padding:10px 12px;border-radius:6px;cursor:pointer;font-family:'SimSun','NSimSun',serif;font-size:13.5px;font-weight:600;transition:all .15s ease;letter-spacing:2px;position:relative;overflow:hidden}
+.fp-btn-sec{background:linear-gradient(180deg,#FCFAF1,#E8DFCA);border:1px solid #C19A6B;color:#2C3E3F;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 2px 4px rgba(120,90,40,.15)}
+.fp-btn-sec:hover{background:linear-gradient(180deg,#F5E6C8,#D4B683);border-color:#D4AF37;color:#9E1B14;box-shadow:0 0 0 1px #D4AF37,0 3px 8px rgba(212,175,55,.3)}
+.fp-btn-sec:active{transform:translateY(1px);box-shadow:0 1px 0 rgba(255,255,255,.5) inset}
+.fp-btn-pri{background:linear-gradient(180deg,#E85D5D,#C3272B);border:1px solid #9E1B14;color:#F5E6C8;text-shadow:0 1px 0 rgba(0,0,0,.25);box-shadow:0 0 0 1px rgba(212,175,55,.3),0 3px 8px rgba(158,29,20,.3),inset 0 1px 0 rgba(255,255,255,.2)}
+.fp-btn-pri:hover{background:linear-gradient(180deg,#C3272B,#9E1B14);box-shadow:0 0 0 1px #D4AF37,0 4px 12px rgba(158,29,20,.4),0 0 16px rgba(212,175,55,.4);transform:translateY(-1px)}
+.fp-btn-pri:active{transform:translateY(1px);box-shadow:0 0 0 1px #D4AF37,inset 0 1px 0 rgba(255,255,255,.2)}
+.fp-btn:disabled{opacity:.6;cursor:not-allowed;transform:none!important;filter:grayscale(.3)}
+.fp-loading{display:flex;align-items:center;justify-content:center;gap:8px;padding:30px;color:#5a6c6d;font-family:'SimSun',serif;font-size:13px}
+.fp-loading::before{content:'';width:14px;height:14px;border:2px solid rgba(193,154,107,.3);border-top-color:#9E1B14;border-radius:50%;animation:fpSpin .8s linear infinite}
+@keyframes fpSpin{to{transform:rotate(360deg)}}
