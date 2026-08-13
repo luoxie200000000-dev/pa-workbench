@@ -971,6 +971,7 @@ fn file_reveal(app: tauri::AppHandle, rel_path: String, name: String) -> Result<
 // register_android_plugin 的包名/类名必须与 Kotlin 类一致。
 #[cfg(target_os = "android")]
 mod safe_opener {
+    use tauri::Manager;
     use tauri::plugin::{Builder, PluginHandle, TauriPlugin};
     use tauri::Runtime;
 
