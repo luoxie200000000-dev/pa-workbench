@@ -251,7 +251,8 @@ function _cloneStateForUndo(src) {
     schedulePeriods: JSON.parse(JSON.stringify(src.schedulePeriods || [])),
     scheduleDays: JSON.parse(JSON.stringify(src.scheduleDays || [])),
     adjustments: JSON.parse(JSON.stringify(src.adjustments || [])),
-    reminders: JSON.parse(JSON.stringify(src.reminders || []))
+    reminders: JSON.parse(JSON.stringify(src.reminders || [])),
+    xiuxian: JSON.parse(JSON.stringify(src.xiuxian || { students: {}, meta: {} }))
   };
 }
 

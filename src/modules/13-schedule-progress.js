@@ -459,7 +459,7 @@ function saveAdjustment(editId) {
     state.adjustments.push({ id: uid(), ...data });
     showToast('调课记录已添加');
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   renderSchedule(document.getElementById('contentArea'));
 }
@@ -467,7 +467,7 @@ function saveAdjustment(editId) {
 async function deleteAdjustment(id) {
   if (!(await appConfirm('确认删除此调课记录？', {danger:true}))) return;
   state.adjustments = state.adjustments.filter(a=>a.id!==id);
-  saveState();
+  saveState({pushUndo:true});
   showToast('调课记录已删除');
   renderSchedule(document.getElementById('contentArea'));
 }
@@ -582,7 +582,7 @@ function confirmScheduleImport(parsedData) {
   } else {
     state.schedule = [...state.schedule, ...data];
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast(`已导入 ${data.length} 节课`);
   renderSchedule(document.getElementById('contentArea'));
@@ -650,7 +650,7 @@ function saveScheduleEntry(entryId) {
   } else {
     state.schedule.push({ id: uid(), day, period, classId, subject });
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast(entryId ? '课程已更新' : '课程已添加');
   renderSchedule(document.getElementById('contentArea'));
@@ -659,7 +659,7 @@ function saveScheduleEntry(entryId) {
 async function deleteScheduleEntry(id) {
   if (!(await appConfirm('确认删除这节课？', {danger:true}))) return;
   state.schedule = state.schedule.filter(s => (s.id||'') !== id);
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast('课程已删除');
   renderSchedule(document.getElementById('contentArea'));
@@ -794,7 +794,7 @@ function saveScheduleSettings() {
   state.scheduleDays = newDays;
   // Remove schedule entries for days that no longer exist
   state.schedule = state.schedule.filter(s => s.day <= newDays.length);
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast('课表设置已保存');
   renderSchedule(document.getElementById('contentArea'));
@@ -1025,7 +1025,7 @@ function saveProgress(id) {
     state.progress.push({ id: uid(), ...data });
     showToast('进度已创建');
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   renderProgress(document.getElementById('contentArea'));
 }
@@ -1033,7 +1033,7 @@ function saveProgress(id) {
 async function deleteProgress(id) {
   if (!(await appConfirm('确认删除此进度记录？', {danger:true}))) return;
   state.progress = state.progress.filter(p=>p.id!==id);
-  saveState();
+  saveState({pushUndo:true});
   showToast('进度已删除');
   renderProgress(document.getElementById('contentArea'));
 }
@@ -1042,7 +1042,7 @@ function saveReflection(id) {
   const p = state.progress.find(x=>x.id===id);
   if (p) {
     p.reflection = document.getElementById(`reflection-${id}`).value.trim();
-    saveState();
+    saveState({pushUndo:true});
     showToast('反思已保存');
   }
 }
@@ -1076,7 +1076,7 @@ function syncProgressFromSchedule() {
     }
   });
   if (added > 0) {
-    saveState();
+    saveState({pushUndo:true});
     showToast(`已同步 ${added} 条课表数据（第${weekDiff}周）`);
     renderProgress(document.getElementById('contentArea'));
   } else {

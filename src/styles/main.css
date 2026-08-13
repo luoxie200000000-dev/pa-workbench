@@ -904,6 +904,12 @@ a { color: var(--primary-dark); text-decoration: none; }
   width: 90%; max-width: 480px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
 }
+.modal-content {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+}
 .modal h3 { font-size: 17px; color: var(--text-heading); margin-bottom: 18px; }
 .form-group { margin-bottom: 14px; }
 .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 5px; }

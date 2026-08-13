@@ -162,24 +162,24 @@ jobs:
             --ks "$KEY" \
             --ks-key-alias androiddebugkey \
             --ks-pass pass:android --key-pass pass:android \
-            --out pa-workbench-v2.3.3-arm64.apk aligned.apk
+            --out pa-workbench-v2.3.4-arm64.apk aligned.apk
           echo "signed apk:"
-          ls -lh pa-workbench-v2.3.3-arm64.apk
-          "$APKSIGNER" verify pa-workbench-v2.3.3-arm64.apk && echo "verify OK"
+          ls -lh pa-workbench-v2.3.4-arm64.apk
+          "$APKSIGNER" verify pa-workbench-v2.3.4-arm64.apk && echo "verify OK"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: pa-workbench-apk
-          path: pa-workbench-v2.3.3-arm64.apk
+          path: pa-workbench-v2.3.4-arm64.apk
           if-no-files-found: error
 
-      - name: Clean old APK assets from existing v2.3.3 release (if re-run)
+      - name: Clean old APK assets from existing v2.3.4 release (if re-run)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/v2.3.3" --jq '.id' 2>/dev/null || echo "")
+          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/v2.3.4" --jq '.id' 2>/dev/null || echo "")
           if [ -n "$REL_ID" ] && [ "$REL_ID" != "null" ]; then
             echo "release id=$REL_ID, removing existing apk assets..."
             gh api "repos/${{ github.repository }}/releases/$REL_ID/assets" --jq '.[].id' \
@@ -188,26 +188,25 @@ jobs:
                   gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$AID" || true
                 done
           else
-            echo "no existing v2.3.3 release, skip cleanup"
+            echo "no existing v2.3.4 release, skip cleanup"
           fi
 
       - name: Create GitHub Release (arm64 APK only)
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: v2.3.3
-          name: 派大星 v2.3.3（arm64 单包，适配 Android 15）
+          tag_name: v2.3.4
+          name: 派大星 v2.3.4（arm64 单包，适配 Android 15）
           body: |
-            ## 派大星 v2.3.3
+            ## 派大星 v2.3.4
 
             ### 本次修复 / 优化
-            - **文件夹搜索改为递归搜索**：搜索时遍历当前文件夹及所有子文件夹，不再只搜当前层级
-            - **Android 双击打开文件修复**：修正 FileProviderPlugin 包名注册，文件可正常打开
-            - **Android 文件属性弹窗"打开文件"修复**：改用 FileProvider + Intent.createChooser，微信式选择器打开
-            - **Clippy 零警告**：修复冗余闭包警告
-            - **目标 SDK 升级至 API 35（Android 15）**：只构建 arm64 单包，适配最新安卓系统
+            - **撤销 / 重做扩展到更多模块**：排课与进度（10 处）、快捷工具（3 处）、修仙模块（修炼发放 / 装备 / 形象 / 任务 / 团队俸禄等 30+ 处）现在都支持撤销重做；撤销快照新增修仙数据字段
+            - **云同步面板透明修复**：`.modal-content` 缺少背景色导致面板透明，已补 `background: var(--bg-card)`
+            - **删除学生数据清理修正**：移除对 `studentTasks` / `chatMessages` 的错误过滤（二者为班级级数据、本就不含 studentId），改为正确清理该学生的修仙数据，避免孤儿数据
+            - **文件夹内撤销重做异常排查**：确认撤销重做为全局状态栈，文件夹内容操作已纳入
 
             ### 下载
-            - `pa-workbench-v2.3.3-arm64.apk` — 安卓安装包（arm64 单包，约 17 MB，已用 debug keystore 签名可直接装）
+            - `pa-workbench-v2.3.4-arm64.apk` — 安卓安装包（arm64 单包，约 17 MB，已用 debug keystore 签名可直接装）
           files: |
-            pa-workbench-v2.3.3-arm64.apk
+            pa-workbench-v2.3.4-arm64.apk

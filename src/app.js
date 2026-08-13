@@ -437,7 +437,8 @@ function _cloneStateForUndo(src) {
     schedulePeriods: JSON.parse(JSON.stringify(src.schedulePeriods || [])),
     scheduleDays: JSON.parse(JSON.stringify(src.scheduleDays || [])),
     adjustments: JSON.parse(JSON.stringify(src.adjustments || [])),
-    reminders: JSON.parse(JSON.stringify(src.reminders || []))
+    reminders: JSON.parse(JSON.stringify(src.reminders || [])),
+    xiuxian: JSON.parse(JSON.stringify(src.xiuxian || { students: {}, meta: {} }))
   };
 }
 
@@ -5617,7 +5618,7 @@ function saveAdjustment(editId) {
     state.adjustments.push({ id: uid(), ...data });
     showToast('调课记录已添加');
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   renderSchedule(document.getElementById('contentArea'));
 }
@@ -5625,7 +5626,7 @@ function saveAdjustment(editId) {
 async function deleteAdjustment(id) {
   if (!(await appConfirm('确认删除此调课记录？', {danger:true}))) return;
   state.adjustments = state.adjustments.filter(a=>a.id!==id);
-  saveState();
+  saveState({pushUndo:true});
   showToast('调课记录已删除');
   renderSchedule(document.getElementById('contentArea'));
 }
@@ -5740,7 +5741,7 @@ function confirmScheduleImport(parsedData) {
   } else {
     state.schedule = [...state.schedule, ...data];
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast(`已导入 ${data.length} 节课`);
   renderSchedule(document.getElementById('contentArea'));
@@ -5808,7 +5809,7 @@ function saveScheduleEntry(entryId) {
   } else {
     state.schedule.push({ id: uid(), day, period, classId, subject });
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast(entryId ? '课程已更新' : '课程已添加');
   renderSchedule(document.getElementById('contentArea'));
@@ -5817,7 +5818,7 @@ function saveScheduleEntry(entryId) {
 async function deleteScheduleEntry(id) {
   if (!(await appConfirm('确认删除这节课？', {danger:true}))) return;
   state.schedule = state.schedule.filter(s => (s.id||'') !== id);
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast('课程已删除');
   renderSchedule(document.getElementById('contentArea'));
@@ -5952,7 +5953,7 @@ function saveScheduleSettings() {
   state.scheduleDays = newDays;
   // Remove schedule entries for days that no longer exist
   state.schedule = state.schedule.filter(s => s.day <= newDays.length);
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   showToast('课表设置已保存');
   renderSchedule(document.getElementById('contentArea'));
@@ -6183,7 +6184,7 @@ function saveProgress(id) {
     state.progress.push({ id: uid(), ...data });
     showToast('进度已创建');
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   renderProgress(document.getElementById('contentArea'));
 }
@@ -6191,7 +6192,7 @@ function saveProgress(id) {
 async function deleteProgress(id) {
   if (!(await appConfirm('确认删除此进度记录？', {danger:true}))) return;
   state.progress = state.progress.filter(p=>p.id!==id);
-  saveState();
+  saveState({pushUndo:true});
   showToast('进度已删除');
   renderProgress(document.getElementById('contentArea'));
 }
@@ -6200,7 +6201,7 @@ function saveReflection(id) {
   const p = state.progress.find(x=>x.id===id);
   if (p) {
     p.reflection = document.getElementById(`reflection-${id}`).value.trim();
-    saveState();
+    saveState({pushUndo:true});
     showToast('反思已保存');
   }
 }
@@ -6234,7 +6235,7 @@ function syncProgressFromSchedule() {
     }
   });
   if (added > 0) {
-    saveState();
+    saveState({pushUndo:true});
     showToast(`已同步 ${added} 条课表数据（第${weekDiff}周）`);
     renderProgress(document.getElementById('contentArea'));
   } else {
@@ -6344,20 +6345,19 @@ function addStudent(data) {
   return student;
 }
 
-// 删除学生（同时清理关联数据：成绩、作业记录、学生任务、聊天消息）
+// 删除学生（同时清理关联数据：成绩、作业记录、修仙数据；studentTasks/chatMessages 为班级级数据不删除）
 async function deleteStudent(id) {
   const idx = state.students.findIndex(s => s.id === id);
   if (idx < 0) { showToast('学生不存在', 'error'); return false; }
   const s = state.students[idx];
   saveState({pushUndo:true});
-  if (!(await appConfirm(`确定要删除学生「${s.name} (${s.studentNo})」吗？\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
+  if (!(await appConfirm(`确定要删除学生「${s.name} (${s.studentNo})」吗？\n关联的成绩、作业记录、修仙数据将一并删除，且不可恢复。`))) {
     return false;
   }
   state.students.splice(idx, 1);
   state.scores = state.scores.filter(sc => sc.studentId !== id);
   state.homeworkRecords = state.homeworkRecords.filter(h => h.studentId !== id);
-  state.studentTasks = state.studentTasks.filter(t => t.studentId !== id);
-  state.chatMessages = state.chatMessages.filter(m => m.studentId !== id);
+  if (state.xiuxian && state.xiuxian.students) { delete state.xiuxian.students[id]; }
   saveState();
   showToast(`学生 ${s.name} 已删除`);
   return true;
@@ -6371,15 +6371,14 @@ async function batchDeleteStudents() {
   const names = ids.map(function(id){ const s = state.students.find(function(x){ return x.id === id; }); return s ? s.name + '(' + s.studentNo + ')' : id; });
   const preview = names.slice(0, 5).join('、') + (names.length > 5 ? (' 等 ' + names.length + ' 人') : '');
   saveState({pushUndo:true});
-  if (!(await appConfirm(`确定批量删除以下 ${ids.length} 名学生吗？\n${preview}\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
+  if (!(await appConfirm(`确定批量删除以下 ${ids.length} 名学生吗？\n${preview}\n关联的成绩、作业记录、修仙数据将一并删除，且不可恢复。`))) {
     return;
   }
   ids.forEach(function(id) {
     state.students = state.students.filter(function(s){ return s.id !== id; });
     state.scores = state.scores.filter(function(sc){ return sc.studentId !== id; });
     state.homeworkRecords = state.homeworkRecords.filter(function(h){ return h.studentId !== id; });
-    state.studentTasks = state.studentTasks.filter(function(t){ return t.studentId !== id; });
-    state.chatMessages = state.chatMessages.filter(function(m){ return m.studentId !== id; });
+    if (state.xiuxian && state.xiuxian.students) { delete state.xiuxian.students[id]; }
   });
   saveState();
   showToast(`已批量删除 ${ids.length} 名学生`);
@@ -10387,7 +10386,7 @@ function toggleReminder(id) {
   const r = state.reminders.find(x=>x.id===id);
   if (!r) return;
   r.active = !r.active;
-  saveState();
+  saveState({pushUndo:true});
   renderReminderList();
   showToast(r.active?'提醒已启用':'提醒已暂停');
 }
@@ -10395,7 +10394,7 @@ function toggleReminder(id) {
 async function deleteReminder(id) {
   if (!(await appConfirm('确认删除此提醒？', {danger:true}))) return;
   state.reminders = state.reminders.filter(r=>r.id!==id);
-  saveState();
+  saveState({pushUndo:true});
   renderReminderList();
   showToast('提醒已删除');
 }
@@ -10487,7 +10486,7 @@ function saveReminder(id) {
   } else {
     state.reminders.push({ id: uid(), name, schedule, desc, active: true });
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   renderReminderList();
   showToast('提醒已保存');
@@ -12311,7 +12310,7 @@ function xiuxianRecalcLinggenSilent() {
 }
 function xiuxianRefreshLinggen() {
   xiuxianRecalcLinggenSilent();
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast('已按最新成绩刷新 ' + Object.keys(state.xiuxian.students).length + ' 名学生灵根', 'success');
 }
 
@@ -12371,7 +12370,7 @@ function xiuxianAutoSyncHw() {
   });
   state.xiuxian.hwClaimed = claimed;
   meta.lastHwSyncTs = now;
-  saveState();
+  saveState({pushUndo:true});
 }
 function xiuxianWeeklyRoutineAll() {
   const perClass = XIUXIAN_RULES.SQUAD_RULES.leaderWeeklyStone;
@@ -12390,7 +12389,7 @@ function xiuxianWeeklyRoutine(cls) {
     let p = state.xiuxian.students[s.id];
     if (p && p.isLeader) { p.stone += XIUXIAN_RULES.SQUAD_RULES.leaderWeeklyStone; cnt++; }
   });
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast('已发放队长周俸（' + cnt + ' 名队长，各 +' + XIUXIAN_RULES.SQUAD_RULES.leaderWeeklyStone + ' 灵石）', 'success');
 }
 function xiuxianAutoCultivate() {
@@ -12420,7 +12419,7 @@ function xiuxianAutoCultivate() {
     converted += xiuxianTrySmallBreakthrough(p);
   }
   meta.lastCultivateDay = t;
-  saveState();
+  saveState({pushUndo:true});
 }
 function xiuxianTrySmallBreakthrough(p) {
   if (p.realm >= 6) return 0;
@@ -12455,18 +12454,18 @@ function xiuxianDailyStoneToSpirit() {
     if (use > 0) { p.stone -= use; p.spirit += use * rate; xiuxianTrySmallBreakthrough(p); }
   }
   meta.lastStoneConvertDay = t;
-  saveState();
+  saveState({pushUndo:true});
 }
 function xiuxianToggleAutoCultivate(id) {
   let p = xiuxianProfile(id); if (!p) return;
   p.autoCultivate = p.autoCultivate === false;
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast(p.autoCultivate ? '已开启自动修炼' : '已关闭自动修炼，灵气将自动转灵石', 'info');
 }
 function xiuxianToggleAutoStoneConvert(id) {
   let p = xiuxianProfile(id); if (!p) return;
   p.autoStoneConvert = p.autoStoneConvert === false;
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast(p.autoStoneConvert ? '已开启每日灵石自动兑灵气' : '已关闭每日灵石自动兑灵气', 'info');
 }
 
@@ -12519,7 +12518,7 @@ function xiuxianExchangeConfirm(id) {
   const gain = v * XIUXIAN_RULES.STONE_TO_SPIRIT_RATE;
   p.spirit += gain;
   xiuxianTrySmallBreakthrough(p);
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   xiuxianCloseModal();
   showToast('兑换：' + v + '灵石 → ' + gain + '灵气', 'success');
 }
@@ -12615,13 +12614,13 @@ function xiuxianRenderGear(id) {
 function xiuxianEquipWeapon(id, wid) {
   let p = xiuxianProfile(id); if (!p) return;
   if ((p.weaponInventory || []).indexOf(wid) < 0) { showToast('未拥有此兵器', 'warn'); return; }
-  p.equipWeapon = wid; saveState(); renderPage();
+  p.equipWeapon = wid; saveState({pushUndo:true}); renderPage();
   xiuxianRenderGear(id);
   showToast('已装备兵器', 'success');
 }
 function xiuxianUnequipWeapon(id) {
   let p = xiuxianProfile(id); if (!p) return;
-  p.equipWeapon = null; saveState(); renderPage();
+  p.equipWeapon = null; saveState({pushUndo:true}); renderPage();
   xiuxianRenderGear(id);
   showToast('已卸下兵器', 'info');
 }
@@ -12634,20 +12633,20 @@ function xiuxianBuyWeapon(id, wid) {
   if (!p.weaponInventory) p.weaponInventory = [];
   p.weaponInventory.push(wid);
   p.equipWeapon = wid;
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   xiuxianRenderGear(id);
   showToast('购买并装备兵器：' + w.name + '（战力+' + Math.round(w.bonusPct*100) + '%）', 'success');
 }
 function xiuxianEquipOutfit(id, oid) {
   let p = xiuxianProfile(id); if (!p) return;
   if ((p.outfitInventory || []).indexOf(oid) < 0) { showToast('未拥有此服装', 'warn'); return; }
-  p.equipOutfit = oid; saveState(); renderPage();
+  p.equipOutfit = oid; saveState({pushUndo:true}); renderPage();
   xiuxianRenderGear(id);
   showToast('已装备服装', 'success');
 }
 function xiuxianUnequipOutfit(id) {
   let p = xiuxianProfile(id); if (!p) return;
-  p.equipOutfit = null; saveState(); renderPage();
+  p.equipOutfit = null; saveState({pushUndo:true}); renderPage();
   xiuxianRenderGear(id);
   showToast('已卸下服装', 'info');
 }
@@ -12660,7 +12659,7 @@ function xiuxianBuyOutfit(id, oid) {
   if (!p.outfitInventory) p.outfitInventory = [];
   p.outfitInventory.push(oid);
   p.equipOutfit = oid;
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   xiuxianRenderGear(id);
   showToast('购买并装备服装：' + o.name + '（战力+' + Math.round(o.bonusPct*100) + '%）', 'success');
 }
@@ -12670,16 +12669,16 @@ function xiuxianExchangePremium(id) {
   const need = XIUXIAN_RULES.PREMIUM_TO_STONE;
   if (p.stone < need) { showToast('灵石不足（需' + need + '兑换 1 极品灵石）', 'warn'); return; }
   p.stone -= need; p.premium += 1;
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast('兑换：' + need + '灵石 → 1 极品灵石 💎', 'success');
 }
 function xiuxianSwitchChar(id) {
   let p = xiuxianProfile(id); if (!p) return;
   if (p.switchLocked) { showToast('形象已锁定（可在商城解除）', 'warn'); return; }
-  if (!p.switchUsed) { p.switchUsed = true; p.characterId = xiuxianRandomCommonChar().id; saveState(); renderPage(); showToast('首次切换免费，新形象已就位！', 'success'); return; }
+  if (!p.switchUsed) { p.switchUsed = true; p.characterId = xiuxianRandomCommonChar().id; saveState({pushUndo:true}); renderPage(); showToast('首次切换免费，新形象已就位！', 'success'); return; }
   if (p.stone < XIUXIAN_RULES.SWITCH_COST_STONE) { showToast('灵石不足（需' + XIUXIAN_RULES.SWITCH_COST_STONE + '）', 'warn'); return; }
   p.stone -= XIUXIAN_RULES.SWITCH_COST_STONE; p.characterId = xiuxianRandomCommonChar().id;
-  saveState(); renderPage(); showToast('已花费' + XIUXIAN_RULES.SWITCH_COST_STONE + '灵石切换形象', 'success');
+  saveState({pushUndo:true}); renderPage(); showToast('已花费' + XIUXIAN_RULES.SWITCH_COST_STONE + '灵石切换形象', 'success');
 }
 function xiuxianDrawLimited(id, charId) {
   let p = xiuxianProfile(id); if (!p) return;
@@ -12696,7 +12695,7 @@ function xiuxianDrawLimited(id, charId) {
   if (ch.quota && taken >= ch.quota) { showToast('「' + ch.name + '」限定名额已满（' + ch.quota + '）', 'warn'); return; }
   if (p.premium < ch.jipin_price) { showToast('极品灵石不足（需' + ch.jipin_price + '）', 'warn'); return; }
   p.premium -= ch.jipin_price; p.characterId = charId;
-  saveState(); renderPage(); showToast('恭喜获得限定角色：' + ch.name + '！', 'success');
+  saveState({pushUndo:true}); renderPage(); showToast('恭喜获得限定角色：' + ch.name + '！', 'success');
 }
 // Stage 7：突破四档概率 + 保底
 function xiuxianOpenBreakthrough(id) {
@@ -12732,11 +12731,11 @@ function xiuxianBreakthrough(id, tier) {
   const success = Math.random() < rate || tier === 4;
   if (success) {
     p.realm += 1; p.spirit = 0; p.btFails = 0; p.lastBreakthroughTier = tier; p.stage = 0; p.spiritOverflow = 0;
-    saveState(); xiuxianCloseModal(); renderPage();
+    saveState({pushUndo:true}); xiuxianCloseModal(); renderPage();
     showToast('突破成功！晋升「' + xiuxianRealmObj(p.realm).name + '」🎉', 'success');
   } else {
     p.btFails = (p.btFails || 0) + 1;
-    saveState();
+    saveState({pushUndo:true});
     showToast('突破失败…（下次成功率提升）', 'warn');
     xiuxianOpenBreakthrough(id);
   }
@@ -12758,7 +12757,7 @@ function xiuxianTaskReward(id) {
     p.pityCount = pity + 1; p.lastPremiumTs = now;
     showToast('本次未掉落极品灵石（累计未得 ' + p.pityCount + '/' + cfg.pityThreshold + '，概率+' + Math.round(cfg.dropRateIncrement * 100) + '%）', 'info');
   }
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
 }
 
 // —— 商城（Stage 4） ——
@@ -12805,7 +12804,7 @@ function xiuxianBuyMall(id, itemId) {
   else if (e.type === 'lock') { p.switchLocked = true; }
   else if (e.type === 'doubleCultivate') { p.doubleCultivate = true; }
   else if (e.type === 'btDiscount') { p.btDiscount = Math.max(p.btDiscount || 0, e.val); }
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast('已购买：' + it.name, 'success');
   xiuxianRenderMall(id);
 }
@@ -12878,13 +12877,13 @@ function xiuxianAppointLeader(cls, sid) {
     if (s.classId === cls && state.xiuxian.students[s.id]) state.xiuxian.students[s.id].isLeader = false;
   });
   if (state.xiuxian.students[sid]) state.xiuxian.students[sid].isLeader = true;
-  saveState(); xiuxianOpenTeam(cls);
+  saveState({pushUndo:true}); xiuxianOpenTeam(cls);
   showToast('已任命队长', 'success');
 }
 function xiuxianRemoveLeader(cls, sid) {
   ensureXiuxian();
   if (state.xiuxian.students[sid]) state.xiuxian.students[sid].isLeader = false;
-  saveState(); xiuxianOpenTeam(cls);
+  saveState({pushUndo:true}); xiuxianOpenTeam(cls);
   showToast('已罢免队长', 'info');
 }
 
@@ -12925,7 +12924,7 @@ function xiuxianArchiveFilter(type, val) {
   if (type==='class') state.xiuxian._filterClass = val;
   else if (type==='linggen') state.xiuxian._filterLinggen = val;
   else if (type==='search') state.xiuxian._searchKey = val;
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
 }
 function renderXiuxianArchive(area) {
   const all = state.students || [];
@@ -13116,7 +13115,7 @@ function xiuxianSyncHwStones() {
   });
   state.xiuxian.hwClaimed = claimed;
   state.xiuxian.meta.lastHwSyncTs = Date.now();
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   if (cnt > 0) {
     let msg = '作业灵石同步：' + cnt + ' 人共 +' + total + ' 灵石';
     if (premiumGot > 0) msg += '，自动掉落 ' + premiumGot + ' 极品灵石 💎';
@@ -13159,7 +13158,7 @@ function xiuxianMultiAward(type) {
   state.xiuxian.customTasks.unshift(rec);
   if (state.xiuxian.customTasks.length > 100) state.xiuxian.customTasks = state.xiuxian.customTasks.slice(0, 100);
   _xMultiSelect = {};
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast(taskType + '灵石发放完成：' + ids.length + ' 人各 +' + stoneAmt + ' 灵石', 'success');
 }
 
@@ -13182,7 +13181,7 @@ function xiuxianAwardOne() {
   if (!state.xiuxian.customTasks) state.xiuxian.customTasks = [];
   state.xiuxian.customTasks.unshift(rec);
   if (state.xiuxian.customTasks.length > 100) state.xiuxian.customTasks = state.xiuxian.customTasks.slice(0, 100);
-  saveState(); renderPage();
+  saveState({pushUndo:true}); renderPage();
   showToast(escapeHtml(s.name) + ' 获得 ' + stoneAmt + ' 灵石（' + taskType + '）', 'success');
 }
 

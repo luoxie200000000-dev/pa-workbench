@@ -60,7 +60,7 @@ function toggleReminder(id) {
   const r = state.reminders.find(x=>x.id===id);
   if (!r) return;
   r.active = !r.active;
-  saveState();
+  saveState({pushUndo:true});
   renderReminderList();
   showToast(r.active?'提醒已启用':'提醒已暂停');
 }
@@ -68,7 +68,7 @@ function toggleReminder(id) {
 async function deleteReminder(id) {
   if (!(await appConfirm('确认删除此提醒？', {danger:true}))) return;
   state.reminders = state.reminders.filter(r=>r.id!==id);
-  saveState();
+  saveState({pushUndo:true});
   renderReminderList();
   showToast('提醒已删除');
 }
@@ -160,7 +160,7 @@ function saveReminder(id) {
   } else {
     state.reminders.push({ id: uid(), name, schedule, desc, active: true });
   }
-  saveState();
+  saveState({pushUndo:true});
   closeModal();
   renderReminderList();
   showToast('提醒已保存');

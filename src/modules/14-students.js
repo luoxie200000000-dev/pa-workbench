@@ -93,20 +93,19 @@ function addStudent(data) {
   return student;
 }
 
-// 删除学生（同时清理关联数据：成绩、作业记录、学生任务、聊天消息）
+// 删除学生（同时清理关联数据：成绩、作业记录、修仙数据；studentTasks/chatMessages 为班级级数据不删除）
 async function deleteStudent(id) {
   const idx = state.students.findIndex(s => s.id === id);
   if (idx < 0) { showToast('学生不存在', 'error'); return false; }
   const s = state.students[idx];
   saveState({pushUndo:true});
-  if (!(await appConfirm(`确定要删除学生「${s.name} (${s.studentNo})」吗？\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
+  if (!(await appConfirm(`确定要删除学生「${s.name} (${s.studentNo})」吗？\n关联的成绩、作业记录、修仙数据将一并删除，且不可恢复。`))) {
     return false;
   }
   state.students.splice(idx, 1);
   state.scores = state.scores.filter(sc => sc.studentId !== id);
   state.homeworkRecords = state.homeworkRecords.filter(h => h.studentId !== id);
-  state.studentTasks = state.studentTasks.filter(t => t.studentId !== id);
-  state.chatMessages = state.chatMessages.filter(m => m.studentId !== id);
+  if (state.xiuxian && state.xiuxian.students) { delete state.xiuxian.students[id]; }
   saveState();
   showToast(`学生 ${s.name} 已删除`);
   return true;
@@ -120,15 +119,14 @@ async function batchDeleteStudents() {
   const names = ids.map(function(id){ const s = state.students.find(function(x){ return x.id === id; }); return s ? s.name + '(' + s.studentNo + ')' : id; });
   const preview = names.slice(0, 5).join('、') + (names.length > 5 ? (' 等 ' + names.length + ' 人') : '');
   saveState({pushUndo:true});
-  if (!(await appConfirm(`确定批量删除以下 ${ids.length} 名学生吗？\n${preview}\n关联的成绩、作业、任务、聊天记录将一并删除，且不可恢复。`))) {
+  if (!(await appConfirm(`确定批量删除以下 ${ids.length} 名学生吗？\n${preview}\n关联的成绩、作业记录、修仙数据将一并删除，且不可恢复。`))) {
     return;
   }
   ids.forEach(function(id) {
     state.students = state.students.filter(function(s){ return s.id !== id; });
     state.scores = state.scores.filter(function(sc){ return sc.studentId !== id; });
     state.homeworkRecords = state.homeworkRecords.filter(function(h){ return h.studentId !== id; });
-    state.studentTasks = state.studentTasks.filter(function(t){ return t.studentId !== id; });
-    state.chatMessages = state.chatMessages.filter(function(m){ return m.studentId !== id; });
+    if (state.xiuxian && state.xiuxian.students) { delete state.xiuxian.students[id]; }
   });
   saveState();
   showToast(`已批量删除 ${ids.length} 名学生`);
