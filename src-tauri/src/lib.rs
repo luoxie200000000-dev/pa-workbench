@@ -960,7 +960,11 @@ fn file_reveal(app: tauri::AppHandle, rel_path: String, name: String) -> Result<
         // 复用 SafeOpenerPlugin（FileProvider）安全打开，避免 opener 裸 file:// 崩溃。
         let payload = safe_opener::SafeOpenPayload { path: target.to_string_lossy().to_string() };
         let handle = app.state::<safe_opener::SafeOpenerHandle<tauri::Wry>>();
-        handle.0.run_mobile_plugin::<serde_json::Value>("safeOpen", payload)
+        let plugin = handle.0.as_ref().ok_or_else(|| {
+            "手机端文件打开组件未就绪，请重启应用后再试；若仍不行请联系开发者".to_string()
+        })?;
+        plugin
+            .run_mobile_plugin::<serde_json::Value>("safeOpen", payload)
             .map_err(|e| format!("打开失败: {}", e))?;
         Ok(())
     }
@@ -982,16 +986,27 @@ mod safe_opener {
     }
 
     // 把移动端插件的 PluginHandle 存进 app state，供 file_open 命令跨模块调用。
-    pub struct SafeOpenerHandle<R: Runtime>(pub PluginHandle<R>);
+    // 注册可能因运行环境（找不到类 / 构造失败等）而失败；此时存 None，
+    // file_open / file_reveal 会优雅降级并返回友好错误——【绝不用 `?` 把整个 App 启动拖垮】
+    // （这正是之前“点图标就闪退”的根因：register_android_plugin(...)? 一失败就中止了 App 启动）。
+    pub struct SafeOpenerHandle<R: Runtime>(pub Option<PluginHandle<R>>);
 
     pub fn init<R: Runtime>() -> TauriPlugin<R> {
         Builder::<R>::new("safe-opener")
             .setup(|app, api| {
-                // register_android_plugin 会把 src-tauri/src/android 下的 Kotlin 集成进 APK，
+                // register_android_plugin 会在运行时把 src-tauri/src/android 下的 Kotlin 集成进 APK，
                 // 并返回 PluginHandle，用它来调用 safeOpen 命令。
-                let handle =
-                    api.register_android_plugin("com.pdx.workbuddy", "SafeOpenerPlugin")?;
-                app.manage(SafeOpenerHandle(handle));
+                // 关键：注册失败绝不让 App 启动中止——只记录日志并降级。
+                match api.register_android_plugin("com.pdx.workbuddy", "SafeOpenerPlugin") {
+                    Ok(handle) => app.manage(SafeOpenerHandle(Some(handle))),
+                    Err(e) => {
+                        eprintln!(
+                            "[safe_opener] 移动端插件注册失败，文件打开功能将不可用: {:?}",
+                            e
+                        );
+                        app.manage(SafeOpenerHandle(None));
+                    }
+                }
                 Ok(())
             })
             .build()
@@ -1006,15 +1021,17 @@ fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<()
     let target = parent.join(sanitize_name(&name)?);
     if !target.is_file() { return Err("文件不存在".to_string()); }
     let path_str = target.to_string_lossy().to_string();
-    // 移动端走自定义 SafeOpenerPlugin：用 FileProvider 把私有文件转 content:// 并带 MIME
-    // 调起系统应用，避免裸 file:// 触发 StrictMode 杀进程（整 App 闪退）。
-    let payload = safe_opener::SafeOpenPayload { path: path_str };
-    let handle = app.state::<safe_opener::SafeOpenerHandle<tauri::Wry>>();
-    handle
-        .0
-        .run_mobile_plugin::<serde_json::Value>("safeOpen", payload)
-        .map_err(|e| format!("打开失败: {}", e))?;
-    Ok(())
+        // 移动端走自定义 SafeOpenerPlugin：用 FileProvider 把私有文件转 content:// 并带 MIME
+        // 调起系统应用，避免裸 file:// 触发 StrictMode 杀进程（整 App 闪退）。
+        let payload = safe_opener::SafeOpenPayload { path: path_str };
+        let handle = app.state::<safe_opener::SafeOpenerHandle<tauri::Wry>>();
+        let plugin = handle.0.as_ref().ok_or_else(|| {
+            "手机端文件打开组件未就绪，请重启应用后再试；若仍不行请联系开发者".to_string()
+        })?;
+        plugin
+            .run_mobile_plugin::<serde_json::Value>("safeOpen", payload)
+            .map_err(|e| format!("打开失败: {}", e))?;
+        Ok(())
 }
 
 // Android 专用：dialog 选中的文件是 content:// URI，std::fs 读不了；
