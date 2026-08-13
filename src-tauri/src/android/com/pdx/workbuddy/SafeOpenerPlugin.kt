@@ -13,39 +13,38 @@ import app.tauri.plugin.Plugin
 import java.io.File
 
 @InvokeArg
-class SafeOpenArgs {
-    lateinit var path: String
-}
+class SafeOpenArgs { lateinit var path: String }
 
-/**
- * 安全打开手机私有目录里的文件。
- * 根因：Tauri opener 的 open_path 在 Android 上用裸 file:// 路径 + 不带 MIME 调起
- * Intent.ACTION_VIEW，遇到手机没有对应 App 或私有目录不可读时，Android 的 StrictMode
- * 会以 penaltyDeath 直接杀进程（整 App 闪退），Kotlin try/catch 和前端 catch 都拦不住。
- *
- * 这里改用 FileProvider 把私有文件转成 content://（带临时读权限 + MIME），
- * 并先 resolveActivity 预检手机有没有能打开的 App。任何异常都被 catch 转为 reject，
- * 绝不直接崩进程。
- */
 @TauriPlugin
 class SafeOpenerPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun safeOpen(invoke: Invoke) {
         try {
             val args = invoke.parseArgs(SafeOpenArgs::class.java)
-            val file = File(args.path)
-            if (!file.exists() || !file.isFile) {
-                invoke.reject("文件不存在")
-                return
+            val src = File(args.path)
+            if (!src.exists() || !src.isFile) { invoke.reject("文件不存在"); return }
+
+            // workbench 文件存放在应用私有 files 目录（app_data_dir 之下）。
+            // 直接以裸 file:// 打开会触发 Android 7+ 的 StrictMode penaltyDeath，
+            // 导致整个进程被系统杀死（整 App 闪退）；而 Tauri 默认 FileProvider 只声明了
+            // external-path / cache-path，并不包含私有 files 目录，因此也不能直接
+            // getUriForFile 原文件。这里先把文件复制到「内部缓存目录」（落在 cache-path 根内），
+            // 再经 FileProvider 转成 content:// 并带 MIME 调起系统应用，从而既不被杀进程、
+            // 又能正常共享给 WPS 等App。
+            val cacheDir = activity.cacheDir
+            val tmp = File(cacheDir, "safe_open_" + System.currentTimeMillis() + "_" + src.name)
+            // 清理上次遗留的临时副本，避免缓存无限增长
+            cacheDir.listFiles()?.forEach { f ->
+                if (f.name.startsWith("safe_open_") && f != tmp) f.delete()
             }
-            // Tauri Android 项目通常已声明 ${applicationId}.fileprovider 的 FileProvider。
+            src.copyTo(tmp, overwrite = true)
+
             val authority = activity.packageName + ".fileprovider"
-            val uri = FileProvider.getUriForFile(activity, authority, file)
-            val ext = if (file.extension.isEmpty()) "" else file.extension.lowercase()
+            val uri = FileProvider.getUriForFile(activity, authority, tmp)
+            val ext = if (src.extension.isEmpty()) "" else src.extension.lowercase()
             val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
             val intent = Intent(Intent.ACTION_VIEW)
             intent.setDataAndType(uri, mime)
-            // 授权目标 App 临时读取这个 content://（私有目录其他 App 原本读不了）
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             val pm = activity.packageManager
@@ -55,8 +54,6 @@ class SafeOpenerPlugin(private val activity: Activity) : Plugin(activity) {
             }
             activity.startActivity(intent)
             invoke.resolve()
-        } catch (ex: Exception) {
-            invoke.reject(ex.message ?: "打开失败")
-        }
+        } catch (ex: Exception) { invoke.reject(ex.message ?: "打开失败") }
     }
 }
