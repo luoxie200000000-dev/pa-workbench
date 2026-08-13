@@ -95,8 +95,26 @@ jobs:
           ls -R "$RES/mipmap-xxxhdpi" | head
           find "$RES" -name "ic_launcher_foreground.png" -exec md5sum {} \;
 
-      - name: Rebuild APK (keeps custom icons)
-        run: npx tauri android build --apk --debug
+      - name: Rebuild APK (release + split per ABI, keeps custom icons)
+        run: npx tauri android build --apk --split-per-abi
+
+      - name: Sign split APKs (debug keystore, installable on phone)
+        run: |
+          set -e
+          KEYSTORE="$HOME/.android/debug.keystore"
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/34.0.0"
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "debug keystore missing, generating one"
+            keytool -genkey -v -keystore "$KEYSTORE" -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass android -keypass android -dname "CN=PDX"
+          fi
+          for f in src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk; do
+            echo "=== signing $f ==="
+            "$BUILD_TOOLS/apksigner" sign \
+              --ks "$KEYSTORE" --ks-key-alias androiddebugkey \
+              --ks-pass pass:android --key-pass pass:android "$f"
+          done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -109,8 +127,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: v2.3.1
-          name: 派大星 v2.3.1（修复启动闪退 / 文件打开）
+          tag_name: v2.3.2
+          name: 派大星 v2.3.2（APK 按架构拆分，体积大降）
           body: |
             ## 派大星 v2.3.1 修复版
 
@@ -120,9 +138,10 @@ jobs:
             - **打开文件不再崩溃**：Android 改用官方 opener 插件走系统 Intent 打开，无对应 App 时弹提示而非杀进程
 
             ### 下载
-            - `*.apk` — Android 安装包（universal，兼容 arm64 / arm32 / x86_64）
+            - `app-arm64-release-unsigned.apk` — 绝大多数手机装这个（arm64，约 40 MB）
+            - `app-arm-release-unsigned.apk` — 老 32 位 arm 手机（约 40 MB）
+            - `app-x86_64-release-unsigned.apk` / `app-x86-release-unsigned.apk` — 模拟器 / 个别 Chromebook
             - `派大星_2.3.1_x64-setup.exe` — Windows 安装包
           files: |
             src-tauri/gen/android/app/build/outputs/apk/**/*.apk
             dist-windows/*.exe
-          skip_if_release_exists: true
