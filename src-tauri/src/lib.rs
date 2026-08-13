@@ -1248,7 +1248,11 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init());
+        .plugin(tauri_plugin_fs::init())
+        // 必须注册 opener 插件：桌面端 file_open / file_reveal 走 app.opener()，
+        // 其底层依赖本插件在 setup 时注入的 Opener<R> 状态；不注册会导致
+        // self.state::<Opener<R>>() 找不到 state 而直接失败（文件打不开/定位不了）。
+        .plugin(tauri_plugin_opener::init());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(safe_opener::init());
     builder
