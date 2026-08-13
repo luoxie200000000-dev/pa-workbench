@@ -884,27 +884,65 @@ fn import_files(app: tauri::AppHandle, paths: Vec<String>, rel_dst: String) -> R
 }
 
 #[cfg(not(target_os = "android"))]
-fn open_path_default(path: &str) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    let r = std::process::Command::new("cmd")
-        .arg("/C").arg("start").arg("").arg(path)
-        .spawn();
-    #[cfg(target_os = "macos")]
-    let r = std::process::Command::new("open").arg(path).spawn();
-    #[cfg(target_os = "linux")]
-    let r = std::process::Command::new("xdg-open").arg(path).spawn();
-    r.map_err(|e| format!("打开失败: {}", e)).map(|_| ())
-}
-
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn file_open(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
     let root = folders_root_static(&app)?;
     let parent = resolve_in_folders(&root, &rel_path)?;
     let target = parent.join(sanitize_name(&name)?);
     if !target.is_file() { return Err("文件不存在".to_string()); }
     let path_str = target.to_string_lossy().to_string();
-    open_path_default(&path_str)
+    // 桌面：用 opener 调起系统默认程序打开（跨平台一致，避免 cmd/start 异常闪退）。
+    app.opener().open_path(path_str, None::<&str>).map_err(|e| format!("打开失败: {}", e))
+}
+
+#[derive(serde::Serialize)]
+struct FileProps {
+    name: String,
+    is_dir: bool,
+    size_bytes: u64,
+    mtime: i64,
+    ext: String,
+    full_path: String,
+    rel_path: String,
+}
+
+/// 查询文件/文件夹属性，含完整存储位置（用于「属性」弹窗）。
+#[tauri::command]
+fn file_props(app: tauri::AppHandle, rel_path: String, name: String) -> Result<FileProps, String> {
+    let root = folders_root_static(&app)?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let target = parent.join(sanitize_name(&name)?);
+    let meta = fs::metadata(&target).map_err(|e| format!("读取失败: {}", e))?;
+    let is_dir = meta.is_dir();
+    let size_bytes = if is_dir { 0u64 } else { meta.len() };
+    let mtime = meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let ext = target.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+    let full_path = target.to_string_lossy().to_string();
+    let rel = if rel_path.is_empty() { name.clone() } else { format!("{}/{}", rel_path, name) };
+    Ok(FileProps { name, is_dir, size_bytes, mtime, ext, full_path, rel_path: rel })
+}
+
+/// 在系统文件管理器中定位文件（Windows 资源管理器 / macOS Finder 高亮）。
+#[tauri::command]
+fn file_reveal(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let root = folders_root_static(&app)?;
+    let parent = resolve_in_folders(&root, &rel_path)?;
+    let target = parent.join(sanitize_name(&name)?);
+    if !target.exists() { return Err("文件不存在".to_string()); }
+    #[cfg(not(target_os = "android"))]
+    {
+        app.opener().reveal_item_in_dir(&target).map_err(|e| format!("定位失败: {}", e))
+    }
+    #[cfg(target_os = "android")]
+    {
+        app.opener().open_path(target.to_string_lossy().to_string(), None::<&str>).map_err(|e| format!("打开失败: {}", e))
+    }
 }
 
 #[cfg(target_os = "android")]
@@ -1212,6 +1250,8 @@ pub fn run() {
             pick_files,
             import_files,
             file_open,
+            file_props,
+            file_reveal,
             #[cfg(target_os = "android")]
             import_file_from_uri,
             folder_cloud_push,

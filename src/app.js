@@ -2963,7 +2963,10 @@ async function renderFolder(area) {
     '.folder-breadcrumb .crumb-link:hover{text-decoration:underline;color:var(--primary-darker);}' +
     '.folder-breadcrumb .crumb-sep{color:var(--text-muted);margin:0 4px;}' +
     '.folder-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}' +
-    '.folder-list{padding:0 4px 8px;overflow-x:auto;-webkit-overflow-scrolling:touch;}' +
+    '.folder-list{padding:0 4px 8px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--primary) #eee;box-shadow:inset -10px 0 8px -10px rgba(0,0,0,0.12);}' +
+    '.folder-list::-webkit-scrollbar{height:9px;}' +
+    '.folder-list::-webkit-scrollbar-thumb{background:var(--primary);border-radius:5px;}' +
+    '.folder-list::-webkit-scrollbar-track{background:#eee;border-radius:5px;}' +
     '.folder-row{display:flex;align-items:center;gap:10px;padding:7px 36px 7px 10px;border-radius:4px;position:relative;min-width:520px;}' +
     '.folder-row:not(.folder-row-header){border-bottom:1px solid #f0f0f0;}' +
     '.folder-row:hover:not(.folder-row-header){background:#f5f7fa;}' +
@@ -3248,6 +3251,12 @@ async function pickFiles(opts) {
 // 执行具体的文件夹动作（行内点击与菜单弹窗共用）
 async function runFolderAction(action, name, isDir) {
   try {
+    // 打开文件防抖：避免连点/连双击重复调起导致异常
+    if (action === 'open') {
+      if (window._folderOpening) return;
+      window._folderOpening = true;
+      setTimeout(function () { window._folderOpening = false; }, 800);
+    }
     if (action === 'up') {
       clearSelection();
       if (_folderRelPath) {
@@ -3271,6 +3280,8 @@ async function runFolderAction(action, name, isDir) {
       await refreshFolderList();
     } else if (action === 'open') {
       await __invoke('file_open', { relPath: _folderRelPath, name: name });
+    } else if (action === 'props') {
+      showFilePropsModal(name, isDir);
     } else if (action === 'create') {
       var nm = prompt('新建文件夹名称：');
       if (!nm) return;
@@ -3498,6 +3509,7 @@ function openContextMenu(x, y, targetRow) {
   var items = [];
   if (targetRow) {
     items.push({ fa: targetIsDir ? 'enter' : 'open', label: '📂 打开' });
+    items.push({ fa: 'props', label: 'ℹ️ 属性' });
     items.push({ fa: 'copy-sel', label: '📋 复制' + (hasSel ? '（' + _folderSelected.size + ' 项）' : '') });
     items.push({ fa: 'cut-sel', label: '✂ 剪切' + (hasSel ? '（' + _folderSelected.size + ' 项）' : '') });
     items.push({ fa: 'rename', label: '✏ 重命名' });
@@ -3576,6 +3588,7 @@ function openRowMenu(btn, name, isDir) {
   pop.setAttribute('data-isdir', isDir ? '1' : '0');
   pop.innerHTML =
     '<div class="menu-item" data-fa="' + (isDir ? 'enter' : 'open') + '">📂 打开</div>' +
+    '<div class="menu-item" data-fa="props">ℹ️ 属性</div>' +
     '<div class="menu-item" data-fa="rename">✏ 重命名</div>' +
     '<div class="menu-item" data-fa="copy">📋 复制</div>' +
     '<div class="menu-item" data-fa="cut">✂ 剪切</div>' +
@@ -3597,6 +3610,81 @@ function openRowMenu(btn, name, isDir) {
     runFolderAction(it.getAttribute('data-fa'), p.getAttribute('data-name'), p.getAttribute('data-isdir') === '1');
   });
   document.body.appendChild(pop);
+}
+
+// 文件属性弹窗：显示类型/大小/修改时间 + 完整存储位置，并支持一键在文件管理器中定位
+function showFilePropsModal(name, isDir) {
+  var old = document.getElementById('filePropsModal');
+  if (old) old.remove();
+  var overlay = document.createElement('div');
+  overlay.id = 'filePropsModal';
+  overlay.className = 'cc-overlay';
+  overlay.style.zIndex = 10001;
+  overlay.innerHTML =
+    '<div style="background:var(--surface);border-radius:14px;width:min(460px,92vw);max-height:86vh;overflow:auto;box-shadow:0 16px 50px rgba(0,0,0,.28);font-family:inherit">' +
+      '<div style="display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--border-light)">' +
+        '<div style="font-size:22px">' + (isDir ? '📁' : '📄') + '</div>' +
+        '<div style="font-weight:700;font-size:16px;color:var(--text-heading);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="fpName"></div>' +
+      '</div>' +
+      '<div style="padding:14px 18px;font-size:13.5px;color:var(--text);line-height:1.9" id="fpBody">' +
+        '<div style="color:var(--text-muted)">正在读取属性…</div>' +
+      '</div>' +
+    '</div>';
+  overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  var onKey = function (e) { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onKey); } };
+  document.addEventListener('keydown', onKey);
+
+  __invoke('file_props', { relPath: _folderRelPath, name: name })
+    .then(function (p) {
+      var sizeStr = p.is_dir ? '—（文件夹）' : formatBytes(p.size_bytes);
+      var dateStr = p.mtime ? new Date(p.mtime * 1000).toLocaleString('zh-CN') : '—';
+      var typeStr = p.is_dir ? '文件夹' : (p.ext ? (p.ext.toUpperCase() + ' 文件') : '文件');
+      var body = '';
+      body += fpRow('类型', typeStr);
+      body += fpRow('大小', sizeStr);
+      body += fpRow('修改时间', dateStr);
+      body += '<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 0 2px;border-top:1px solid var(--border-light);margin-top:6px">' +
+                '<div style="color:var(--text-muted);min-width:84px;flex-shrink:0">存储位置</div>' +
+                '<div style="flex:1">' +
+                  '<div id="fpPath" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;word-break:break-all;color:var(--text);background:#f6f7f9;padding:6px 8px;border-radius:6px">' + escapeHtml(p.full_path) + '</div>' +
+                  '<div style="display:flex;gap:8px;margin-top:8px">' +
+                    '<button id="fpCopy" style="flex:1;padding:7px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer;font-size:13px">📋 复制路径</button>' +
+                    '<button id="fpReveal" style="flex:1;padding:7px;border:1px solid var(--primary);border-radius:7px;background:var(--primary);color:#fff;cursor:pointer;font-size:13px">📂 在文件管理器中打开</button>' +
+                  '</div>' +
+                '</div>' +
+              '</div>';
+      var nameEl = document.getElementById('fpName'); if (nameEl) nameEl.textContent = p.name;
+      var bodyEl = document.getElementById('fpBody'); if (bodyEl) bodyEl.innerHTML = body;
+      var copyBtn = document.getElementById('fpCopy');
+      if (copyBtn) copyBtn.onclick = function () {
+        var txt = p.full_path;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(function () { showToast('路径已复制'); }).catch(function () { fpFallbackCopy(txt); });
+        } else { fpFallbackCopy(txt); }
+      };
+      var revealBtn = document.getElementById('fpReveal');
+      if (revealBtn) revealBtn.onclick = function () {
+        revealBtn.disabled = true; revealBtn.textContent = '定位中…';
+        __invoke('file_reveal', { relPath: _folderRelPath, name: name })
+          .then(function () { showToast('已打开文件管理器'); })
+          .catch(function (err) { showToast('定位失败：' + String(err), 'warn'); revealBtn.disabled = false; revealBtn.textContent = '📂 在文件管理器中打开'; });
+      };
+    })
+    .catch(function (err) {
+      var bodyEl = document.getElementById('fpBody');
+      if (bodyEl) bodyEl.innerHTML = '<div style="color:#d33">读取属性失败：' + escapeHtml(String(err)) + '</div>';
+    });
+}
+function fpRow(k, v) {
+  return '<div style="display:flex;gap:8px;padding:3px 0"><div style="color:var(--text-muted);min-width:84px;flex-shrink:0">' + k + '</div><div style="flex:1;word-break:break-all">' + escapeHtml(String(v)) + '</div></div>';
+}
+function fpFallbackCopy(text) {
+  try {
+    var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    showToast('路径已复制');
+  } catch (e) { showToast('复制失败，请手动复制'); }
 }
 
 // 行内/工具栏/面包屑的 data-fa 统一入口（弹窗类动作 → openRowMenu；其余 → runFolderAction）
