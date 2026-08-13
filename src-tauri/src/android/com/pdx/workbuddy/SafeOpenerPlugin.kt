@@ -16,6 +16,11 @@ import java.io.File
 // 注解处理器是否对注入的 Kotlin 生效。
 class SafeOpenerPlugin(private val activity: Activity) : Plugin(activity) {
 
+    // 命令参数：用标准 parseArgs（基于 Gson 反射，无需 @InvokeArg 注解，也不需要注解处理器）
+    class SafeOpenArgs {
+        var path: String = ""
+    }
+
     override fun onInvoke(invoke: Invoke) {
         when (invoke.command) {
             "safeOpen" -> safeOpen(invoke)
@@ -25,7 +30,8 @@ class SafeOpenerPlugin(private val activity: Activity) : Plugin(activity) {
 
     private fun safeOpen(invoke: Invoke) {
         try {
-            val path = invoke.data.optString("path", "")
+            val args = invoke.parseArgs(SafeOpenArgs::class.java)
+            val path = args.path ?: ""
             if (path.isEmpty()) {
                 invoke.reject("缺少 path 参数")
                 return
