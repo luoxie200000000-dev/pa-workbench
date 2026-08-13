@@ -63,19 +63,6 @@ jobs:
           done
           ./gradlew --version
 
-      - name: Inject custom Android plugin (SafeOpenerPlugin.kt)
-        # Tauri v2 不会自动把 app 本地的 src-tauri/src/android 编译进工程，
-        # 这里在 init 之后手动把 Kotlin 拷进生成的 Android 工程的 java 源码集，
-        # 这样 Gradle 才会把它编进 dex，register_android_plugin 启动时才能找到类
-        # （否则 find_class 找不到类 → setup 返回 Err → App 启动即崩）。
-        run: |
-          set -e
-          DST=src-tauri/gen/android/app/src/main/java/com/pdx/workbuddy
-          mkdir -p "$DST"
-          cp -v src-tauri/src/android/com/pdx/workbuddy/SafeOpenerPlugin.kt "$DST/SafeOpenerPlugin.kt"
-          echo "=== injected Kotlin ==="
-          ls -l "$DST"
-
       - name: First build (populate gen/android with Tauri default icons)
         run: npx tauri android build --apk --debug
 
@@ -128,9 +115,9 @@ jobs:
             ## 派大星 v2.3.1 修复版
 
             ### 本次修复
-            - **Android 启动不再闪退**：`safe_opener` 插件注册改为非致命，注册失败不再中止 App 启动（此前点图标即闪退的根因）
+            - **Android 启动不再闪退**：移除了此前导致启动即崩的自定义插件注册（register_android_plugin），App 现在能正常进入
             - **文件打开恢复可用**：注册 `tauri_plugin_opener` 插件，修复桌面/移动端双击打开文件、属性弹窗“在文件管理器中打开”失效的问题
-            - **打开私有文件不再崩溃**：Android 走 FileProvider 安全打开，无对应 App 时弹提示而非杀进程
+            - **打开文件不再崩溃**：Android 改用官方 opener 插件走系统 Intent 打开，无对应 App 时弹提示而非杀进程
 
             ### 下载
             - `*.apk` — Android 安装包（universal，兼容 arm64 / arm32 / x86_64）
