@@ -715,7 +715,11 @@ fn folder_create(app: tauri::AppHandle, rel_path: String, name: String) -> Resul
     let parent = resolve_in_folders(&root, &rel_path)?;
     let child = parent.join(sanitize_name(&name)?);
     if child.exists() {
-        return Err("同名文件夹已存在".to_string());
+        return Err(if child.is_dir() {
+            "同名文件夹已存在".to_string()
+        } else {
+            "已存在同名文件".to_string()
+        });
     }
     fs::create_dir_all(&child)
         .map_err(|e| format!("创建文件夹失败: {}", e))?;
@@ -777,6 +781,12 @@ fn item_move(app: tauri::AppHandle, rel_src: String, name: String, rel_dst: Stri
     let dst = dst_parent.join(&name);
     if !src.exists() { return Err("源项目不存在".to_string()); }
     if dst.exists() { return Err("目标位置已存在同名项目".to_string()); }
+    // 防穿越：不能把项目移动到自身或其子目录内部（会造成失败/混乱）。
+    let src_canon = fs::canonicalize(&src).map_err(|e| format!("路径解析失败: {}", e))?;
+    let dst_parent_canon = fs::canonicalize(&dst_parent).map_err(|e| format!("路径解析失败: {}", e))?;
+    if dst_parent_canon.starts_with(&src_canon) {
+        return Err("不能移动到自身内部".to_string());
+    }
     fs::rename(&src, &dst).map_err(|e| format!("移动失败: {}", e))?;
     Ok(())
 }
@@ -921,13 +931,16 @@ fn file_props(app: tauri::AppHandle, rel_path: String, name: String) -> Result<F
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let ext = target.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+    let ext = target.extension()
+        .map(|e| e.to_string_lossy().to_string().to_lowercase())
+        .unwrap_or_default();
     let full_path = target.to_string_lossy().to_string();
     let rel = if rel_path.is_empty() { name.clone() } else { format!("{}/{}", rel_path, name) };
     Ok(FileProps { name, is_dir, size_bytes, mtime, ext, full_path, rel_path: rel })
 }
 
-/// 在系统文件管理器中定位文件（Windows 资源管理器 / macOS Finder 高亮）。
+/// 在系统文件管理器中定位文件（桌面：资源管理器/Finder 高亮；
+/// 移动端没有可供定位的系统文件管理器，改为用安全方式打开文件，避免裸 file:// 触发 StrictMode 杀进程）。
 #[tauri::command]
 fn file_reveal(app: tauri::AppHandle, rel_path: String, name: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
@@ -941,7 +954,15 @@ fn file_reveal(app: tauri::AppHandle, rel_path: String, name: String) -> Result<
     }
     #[cfg(target_os = "android")]
     {
-        app.opener().open_path(target.to_string_lossy().to_string(), None::<&str>).map_err(|e| format!("打开失败: {}", e))
+        if target.is_dir() {
+            return Err("移动端暂不支持在系统文件管理器中定位文件夹".to_string());
+        }
+        // 复用 SafeOpenerPlugin（FileProvider）安全打开，避免 opener 裸 file:// 崩溃。
+        let payload = safe_opener::SafeOpenPayload { path: target.to_string_lossy().to_string() };
+        let handle = app.state::<safe_opener::SafeOpenerHandle<tauri::Wry>>();
+        handle.0.run_mobile_plugin::<serde_json::Value>("safeOpen", payload)
+            .map_err(|e| format!("打开失败: {}", e))?;
+        Ok(())
     }
 }
 
@@ -1153,6 +1174,8 @@ async fn folder_cloud_pull(app: tauri::AppHandle) -> Result<serde_json::Value, S
         let bytes = resp2.bytes().await.map_err(|e| format!("读取 {} 失败: {}", key, e))?;
         let rel = key.trim_start_matches("folders/");
         if rel.is_empty() { continue; } // 跳过 "folders/" 这类目录标记
+        // 防御路径穿越：拒绝含 .. 或绝对路径片段的 key（lexical starts_with 无法识别 ..，必须显式拦截）
+        if rel.contains("..") || rel.starts_with('/') || rel.contains('\\') { continue; }
         let dst = root.join(rel);
         // 防御：落点必须仍在 folders 根目录内，避免 key 被构造出路径穿越
         if !dst.starts_with(&root) { continue; }
