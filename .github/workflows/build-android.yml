@@ -114,6 +114,11 @@ jobs:
       - name: Pick arm64 release APK, zipalign, sign with debug keystore
         run: |
           set -e
+          echo "=== ANDROID_HOME=$ANDROID_HOME ==="
+          echo "=== JAVA_HOME=$JAVA_HOME ==="
+          which keytool || echo "keytool not in PATH, trying JAVA_HOME"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          
           KEY="$HOME/.android/debug.keystore"
           if [ ! -f "$KEY" ]; then
             echo "generating debug keystore..."
@@ -123,15 +128,28 @@ jobs:
               -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
           OUT=src-tauri/gen/android/app/build/outputs
+          echo "=== listing all APKs ==="
+          find "$OUT" -name "*.apk" -type f || echo "no outputs dir"
+          echo "=== searching for arm64 release APK ==="
           SRC=$(find "$OUT" -name "app-arm64-v8a-release-unsigned.apk" | head -1)
           if [ -z "$SRC" ]; then
-            echo "ERROR: app-arm64-v8a-release-unsigned.apk not found:"
-            find "$OUT" -name "*.apk" -type f
+            echo "exact name not found, trying flexible match..."
+            SRC=$(find "$OUT" -name "*arm64*release*.apk" -type f | head -1)
+          fi
+          if [ -z "$SRC" ]; then
+            echo "ERROR: no arm64 release APK found"
             exit 1
           fi
           echo "found: $SRC"
           APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
           ZIPALIGN=$(ls -1 "$ANDROID_HOME"/build-tools/*/zipalign 2>/dev/null | sort -V | tail -1)
+          echo "apksigner: $APKSIGNER"
+          echo "zipalign: $ZIPALIGN"
+          if [ -z "$APKSIGNER" ] || [ -z "$ZIPALIGN" ]; then
+            echo "ERROR: build-tools not found in $ANDROID_HOME"
+            ls -la "$ANDROID_HOME/build-tools/" || echo "no build-tools dir"
+            exit 1
+          fi
           "$ZIPALIGN" -p -f 4 "$SRC" aligned.apk
           "$APKSIGNER" sign \
             --ks "$KEY" \
