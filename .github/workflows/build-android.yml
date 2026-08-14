@@ -155,15 +155,15 @@ jobs:
             --ks "$KEY" \
             --ks-key-alias androiddebugkey \
             --ks-pass pass:android --key-pass pass:android \
-            --out pa-workbench-v2.3.4-arm64.apk aligned.apk
-          "$APKSIGNER" verify pa-workbench-v2.3.4-arm64.apk && echo "verify OK"
-          ls -lh pa-workbench-v2.3.4-arm64.apk
+            --out pa-workbench-v2.3.5-arm64.apk aligned.apk
+          "$APKSIGNER" verify pa-workbench-v2.3.5-arm64.apk && echo "verify OK"
+          ls -lh pa-workbench-v2.3.5-arm64.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: pa-workbench-apk
-          path: pa-workbench-v2.3.4-arm64.apk
+          path: pa-workbench-v2.3.5-arm64.apk
           if-no-files-found: error
 
       - name: Clean old APK assets from release
@@ -171,7 +171,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/v2.3.4" --jq '.id' 2>/dev/null || echo "")
+          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/v2.3.5" --jq '.id' 2>/dev/null || echo "")
           if [ -n "$REL_ID" ] && [ "$REL_ID" != "null" ]; then
             gh api "repos/${{ github.repository }}/releases/$REL_ID/assets" --jq '.[].id' \
               | while read -r AID; do
@@ -183,10 +183,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: success()
         with:
-          tag_name: v2.3.4
-          name: 派大星 v2.3.4（Android 16 / API 36，arm64 单包约17MB）
+          tag_name: v2.3.5
+          name: 派大星 v2.3.5（Android 16 / API 36，arm64 单包约17MB）
           body: |
-            ## 派大星 v2.3.4
+            ## 派大星 v2.3.5
 
             ### 本次更新
             - **Android 16 (API 36) 适配**：compileSdk/targetSdk=36（Tauri v2.11 默认），16KB 页对齐
@@ -195,9 +195,10 @@ jobs:
             - **课时卡片点击**：新增 filterProgressByStatus 筛选功能
             - **作业统计修复**：getClassHomeworkStats 支持按所选作业筛选
             - **学生档案分层卡片点击**：showLayerStudentList 注册到事件委托
+            - **手机端表格竖排/逐字断行修复**：作业登记/任务/成绩/进度/状态/数据表格补 `thead/tbody` 宽度与单元格 `white-space:nowrap`，改为横向滚动
 
             ### 下载
-            - `pa-workbench-v2.3.4-arm64.apk` — 安卓安装包（arm64 单包，约 17 MB，已签名可直接装）
+            - `pa-workbench-v2.3.5-arm64.apk` — 安卓安装包（arm64 单包，约 17 MB，已签名可直接装）
             - Windows 安装包（由 Build Windows Installer 工作流追加）
           files: |
-            pa-workbench-v2.3.4-arm64.apk
+            pa-workbench-v2.3.5-arm64.apk

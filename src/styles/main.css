@@ -1623,8 +1623,8 @@ th[data-click="__sortModalTable"][data-sort-dir] { color: var(--primary); }
   .modal-actions .btn { width: 100%; }
 
   /* All data tables — ensure horizontal scroll */
-  .data-table, .task-table, .score-table, .progress-table, .hw-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
-  .data-table thead, .data-table tbody, .task-table thead, .task-table tbody, .score-table thead, .score-table tbody, .progress-table thead, .progress-table tbody, .hw-table thead, .hw-table tbody { width: max-content; }
+  .data-table, .task-table, .score-table, .progress-table, .hw-table, .status-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  .data-table thead, .data-table tbody, .task-table thead, .task-table tbody, .score-table thead, .score-table tbody, .progress-table thead, .progress-table tbody, .hw-table thead, .hw-table tbody, .status-table thead, .status-table tbody { width: max-content; }
 
   /* Score table wrapper scroll */
   .score-table-wrapper { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -2493,10 +2493,26 @@ html.ui-mobile .schedule-table { display: block; overflow-x: auto; white-space: 
    聊天框全屏沉浸、课程表日/周大字号、档案字母索引 留待阶段3专项。
    ============================================================ */
 
-/* 学生工作：作业/任务/成绩 表格在手机下横向滚动，不撑破页面 */
+/* 学生工作：作业/任务/成绩/进度/状态/数据 表格在手机下横向滚动，不撑破页面 */
 html.ui-mobile .task-table,
 html.ui-mobile .hw-table,
-html.ui-mobile .score-table { display: block; overflow-x: auto; white-space: nowrap; font-size: 0.78rem; }
+html.ui-mobile .score-table,
+html.ui-mobile .progress-table,
+html.ui-mobile .status-table,
+html.ui-mobile .data-table { display: block; overflow-x: auto; white-space: nowrap; font-size: 0.78rem; }
+html.ui-mobile .task-table thead, html.ui-mobile .task-table tbody,
+html.ui-mobile .hw-table thead, html.ui-mobile .hw-table tbody,
+html.ui-mobile .score-table thead, html.ui-mobile .score-table tbody,
+html.ui-mobile .progress-table thead, html.ui-mobile .progress-table tbody,
+html.ui-mobile .status-table thead, html.ui-mobile .status-table tbody,
+html.ui-mobile .data-table thead, html.ui-mobile .data-table tbody { width: max-content; }
+/* 单元格禁止换行：内容完整显示，靠父容器横向滚动（修复竖排/逐字断行） */
+html.ui-mobile .task-table th, html.ui-mobile .task-table td,
+html.ui-mobile .hw-table th, html.ui-mobile .hw-table td,
+html.ui-mobile .score-table th, html.ui-mobile .score-table td,
+html.ui-mobile .progress-table th, html.ui-mobile .progress-table td,
+html.ui-mobile .status-table th, html.ui-mobile .status-table td,
+html.ui-mobile .data-table th, html.ui-mobile .data-table td { white-space: nowrap; }
 html.ui-mobile .hw-stat-row { font-size: 0.82rem; }
 
 /* 聊天框：手机全屏沉浸（侧栏置顶横滑、主区填满、顶栏吸顶、输入贴底安全区） */
