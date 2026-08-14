@@ -507,6 +507,10 @@ a { color: var(--primary-dark); text-decoration: none; }
 .status-table td { padding: 7px 10px; border-bottom: 1px solid var(--border-light); }
 .status-table tr:hover td { background: var(--bg-hover); }
 .status-table .size-col { text-align: right; font-variant-numeric: tabular-nums; }
+.x-sum-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.x-sum-table th { text-align: left; padding: 8px 10px; background: var(--bg-app); color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border); }
+.x-sum-table td { padding: 7px 10px; border-bottom: 1px solid var(--border-light); }
+.x-sum-table tr:hover td { background: var(--bg-hover); }
 .status-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 10px; }
 .status-badge.ok { background: #E8F5E9; color: var(--primary-darker); }
 .status-badge.warn { background: #FFF3E0; color: var(--warning); }
@@ -1623,8 +1627,8 @@ th[data-click="__sortModalTable"][data-sort-dir] { color: var(--primary); }
   .modal-actions .btn { width: 100%; }
 
   /* All data tables — ensure horizontal scroll */
-  .data-table, .task-table, .score-table, .progress-table, .hw-table, .status-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
-  .data-table thead, .data-table tbody, .task-table thead, .task-table tbody, .score-table thead, .score-table tbody, .progress-table thead, .progress-table tbody, .hw-table thead, .hw-table tbody, .status-table thead, .status-table tbody { width: max-content; }
+  .data-table, .task-table, .score-table, .progress-table, .hw-table, .status-table, .x-sum-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+  .data-table thead, .data-table tbody, .task-table thead, .task-table tbody, .score-table thead, .score-table tbody, .progress-table thead, .progress-table tbody, .hw-table thead, .hw-table tbody, .status-table thead, .status-table tbody, .x-sum-table thead, .x-sum-table tbody { width: max-content; }
 
   /* Score table wrapper scroll */
   .score-table-wrapper { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -2499,20 +2503,20 @@ html.ui-mobile .hw-table,
 html.ui-mobile .score-table,
 html.ui-mobile .progress-table,
 html.ui-mobile .status-table,
-html.ui-mobile .data-table { display: block; overflow-x: auto; white-space: nowrap; font-size: 0.78rem; }
+html.ui-mobile .data-table, html.ui-mobile .x-sum-table { display: block; overflow-x: auto; white-space: nowrap; font-size: 0.78rem; }
 html.ui-mobile .task-table thead, html.ui-mobile .task-table tbody,
 html.ui-mobile .hw-table thead, html.ui-mobile .hw-table tbody,
 html.ui-mobile .score-table thead, html.ui-mobile .score-table tbody,
 html.ui-mobile .progress-table thead, html.ui-mobile .progress-table tbody,
 html.ui-mobile .status-table thead, html.ui-mobile .status-table tbody,
-html.ui-mobile .data-table thead, html.ui-mobile .data-table tbody { width: max-content; }
+html.ui-mobile .data-table thead, html.ui-mobile .data-table tbody, html.ui-mobile .x-sum-table thead, html.ui-mobile .x-sum-table tbody { width: max-content; }
 /* 单元格禁止换行：内容完整显示，靠父容器横向滚动（修复竖排/逐字断行） */
 html.ui-mobile .task-table th, html.ui-mobile .task-table td,
 html.ui-mobile .hw-table th, html.ui-mobile .hw-table td,
 html.ui-mobile .score-table th, html.ui-mobile .score-table td,
 html.ui-mobile .progress-table th, html.ui-mobile .progress-table td,
 html.ui-mobile .status-table th, html.ui-mobile .status-table td,
-html.ui-mobile .data-table th, html.ui-mobile .data-table td { white-space: nowrap; }
+html.ui-mobile .data-table th, html.ui-mobile .data-table td, html.ui-mobile .x-sum-table th, html.ui-mobile .x-sum-table td { white-space: nowrap; }
 html.ui-mobile .hw-stat-row { font-size: 0.82rem; }
 
 /* 聊天框：手机全屏沉浸（侧栏置顶横滑、主区填满、顶栏吸顶、输入贴底安全区） */
