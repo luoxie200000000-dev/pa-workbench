@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NDK_VERSION: "27.0.12077973"
+      RUSTFLAGS: "-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=16384"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,19 +58,6 @@ jobs:
 
       - name: Init Tauri Android
         run: npx tauri android init
-
-      - name: Patch build.gradle.kts for API 36
-        # tauri.conf.json minSdkVersion=36, but Tauri template may default
-        # compileSdk/targetSdk to a lower value. Patch them to 36.
-        run: |
-          GRADLE="src-tauri/gen/android/app/build.gradle.kts"
-          if [ -f "$GRADLE" ]; then
-            sed -i 's/compileSdk = .*/compileSdk = 36/' "$GRADLE"
-            sed -i 's/minSdk = .*/minSdk = 36/' "$GRADLE"
-            sed -i 's/targetSdk = .*/targetSdk = 36/' "$GRADLE"
-            echo "[OK] Patched build.gradle.kts: compileSdk=minSdk=targetSdk=36"
-            grep -E "compileSdk|minSdk|targetSdk" "$GRADLE" || true
-          fi
 
       - name: Pre-fetch Gradle distribution (retry on transient network blips)
         working-directory: src-tauri/gen/android
@@ -183,7 +171,7 @@ jobs:
             ## 派大星 v2.3.4
 
             ### 本次更新
-            - **Android 16 (API 36) 适配**：minSdk=36，只适配最新安卓系统
+            - **Android 16 (API 36) 适配**：compileSdk/targetSdk=36（Tauri v2.11 默认），16KB 页对齐
             - **成绩分层标签颜色统一**：紫青粉色系，与班级分层绿蓝橙红色系完全区分
             - **分层变动计算修复**：改用 scoreToLayer 按分数分层比较
             - **课时卡片点击**：新增 filterProgressByStatus 筛选功能
