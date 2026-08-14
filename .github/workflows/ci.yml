@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 前端构建验证：concat + vite build
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Concat modules
+        run: npm run concat
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          if [ ! -f dist/index.html ]; then
+            echo "ERROR: dist/index.html not found"
+            exit 1
+          fi
+          echo "Build output verified:"
+          ls -lh dist/
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-frontend
+          path: dist/
+          retention-days: 7
+
+  # Rust 后端编译检查
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: src-tauri -> target
+
+      - name: Install system dependencies (Tauri requirements)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check
+
+      - name: Cargo clippy (warnings only)
+        working-directory: src-tauri
+        run: cargo clippy -- -W warnings
+        continue-on-error: true
+
+  # 模块完整性检查：确保 src/modules/ 拼接后与 src/app.js 一致
+  module-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Concat modules
+        run: node scripts/concat-modules.cjs
+
+      - name: Check for uncommitted changes
+        run: |
+          git diff --exit-code src/app.js || {
+            echo "ERROR: src/app.js is out of sync with src/modules/"
+            echo "Run 'npm run concat' locally and commit the result."
+            exit 1
+          }

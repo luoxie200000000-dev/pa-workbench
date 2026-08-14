@@ -1,0 +1,83 @@
+name: Build Windows Installer
+
+# 等安卓构建（Build Android APK）完成后才跑，确保 vX.Y.Z release 已存在，
+# 本工作流只把 Windows 安装包追加到同一个 release，避免重复建 release 冲突。
+on:
+  workflow_run:
+    workflows: ["Build Android APK"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-build
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    # workflow_run 触发时，仅当安卓构建成功才继续；手动触发（workflow_dispatch）始终执行
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup Rust (stable, MSVC)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install bundling tools (WiX for .msi / NSIS for .exe)
+        # Tauri 2 在 Windows 打包需要 WiX 与 NSIS，CI 镜像默认不自带，须显式安装
+        run: |
+          winget install --id WiXToolset.WiX --accept-package-agreements --accept-source-agreements -e || true
+          winget install --id NSIS.NSIS --accept-package-agreements --accept-source-agreements -e || true
+        continue-on-error: true
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: src-tauri -> target
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Windows installer (msi + nsis exe)
+        # tauri build 会先执行 beforeBuildCommand (npm run build -> concat + vite)，再编译 Rust 并打包
+        run: npm run tauri build
+
+      - name: Get app version (from package.json)
+        id: ver
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Locate installers
+        id: find
+        shell: bash
+        run: |
+          MSI=$(find src-tauri/target/release/bundle/msi -name "*.msi" | head -1)
+          EXE=$(find src-tauri/target/release/bundle/nsis -name "*.exe" | head -1)
+          echo "msi=$MSI" >> "$GITHUB_OUTPUT"
+          echo "exe=$EXE" >> "$GITHUB_OUTPUT"
+          echo "Found MSI: $MSI"
+          echo "Found EXE: $EXE"
+          ls -lh src-tauri/target/release/bundle/msi/ 2>/dev/null || true
+          ls -lh src-tauri/target/release/bundle/nsis/ 2>/dev/null || true
+
+      - name: Upload to GitHub Release (append to existing vX.Y.Z)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          echo "Uploading to release $TAG"
+          gh release upload "$TAG" "${{ steps.find.outputs.msi }}" --clobber
+          gh release upload "$TAG" "${{ steps.find.outputs.exe }}" --clobber
+          echo "=== release assets ==="
+          gh release view "$TAG" --json assets --jq '.assets[].name'

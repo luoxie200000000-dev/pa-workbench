@@ -1,0 +1,16 @@
+{
+  "name": "派大星",
+  "short_name": "派大星",
+  "description": "派大星的初中生物教学工作台",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F1F8E9",
+  "theme_color": "#4CAF50",
+  "icons": [
+    { "src": "icons/icon-32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "icons/icon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "icons/icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
