@@ -13,39 +13,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-apk:
+  android:
     runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "27.0.12077973"
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: 17
-          distribution: temurin
+          distribution: zulu
+          java-version: "17"
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK components (API 36)
+      - name: Install Android components (API 36 = Android 16)
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-          sdkmanager "ndk;27.2.12479018" || true
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/27.2.12479018" >> $GITHUB_ENV
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Setup Rust with Android targets
+      - name: Setup Rust targets (only arm64 — covers all modern Android devices)
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
@@ -53,155 +46,152 @@ jobs:
           cache-on-failure: true
           workspaces: src-tauri -> target
 
-      - name: Install npm dependencies
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
         run: npm install
 
-      - name: Init Tauri Android project
+      - name: Init Tauri Android
         run: npx tauri android init
 
-      - name: Patch Android files for API 36 + FileProvider + Signing
+      - name: Patch build.gradle.kts for API 36
+        # tauri.conf.json minSdkVersion=36, but Tauri template may default
+        # compileSdk/targetSdk to a lower value. Patch them to 36.
         run: |
-          GRADLE_FILE="src-tauri/gen/android/app/build.gradle.kts"
-
-          # --- Patch build.gradle.kts: API 36 ---
-          if [ -f "$GRADLE_FILE" ]; then
-            sed -i 's/compileSdk = .*/compileSdk = 36/' "$GRADLE_FILE"
-            sed -i 's/minSdk = .*/minSdk = 36/' "$GRADLE_FILE"
-            sed -i 's/targetSdk = .*/targetSdk = 36/' "$GRADLE_FILE"
-            echo "[OK] Patched build.gradle.kts for API 36"
+          GRADLE="src-tauri/gen/android/app/build.gradle.kts"
+          if [ -f "$GRADLE" ]; then
+            sed -i 's/compileSdk = .*/compileSdk = 36/' "$GRADLE"
+            sed -i 's/minSdk = .*/minSdk = 36/' "$GRADLE"
+            sed -i 's/targetSdk = .*/targetSdk = 36/' "$GRADLE"
+            echo "[OK] Patched build.gradle.kts: compileSdk=minSdk=targetSdk=36"
+            grep -E "compileSdk|minSdk|targetSdk" "$GRADLE" || true
           fi
 
-          # --- Create file_paths.xml ---
-          RES_XML_DIR="src-tauri/gen/android/app/src/main/res/xml"
-          mkdir -p "$RES_XML_DIR"
-          cat > "$RES_XML_DIR/file_paths.xml" << 'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <cache-path name="cache" path="."/>
-    <files-path name="files" path="."/>
-    <external-cache-path name="external_cache" path="."/>
-</paths>
-EOF
-          echo "[OK] Created file_paths.xml"
-
-          # --- Patch AndroidManifest.xml: add FileProvider ---
-          MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ]; then
-            python3 -c "
-import re
-with open('$MANIFEST', 'r') as f:
-            content = f.read()
-provider = '''
-        <provider
-            android:name=\"androidx.core.content.FileProvider\"
-            android:authorities=\"\${applicationId}.fileprovider\"
-            android:exported=\"false\"
-            android:grantUriPermissions=\"true\">
-            <meta-data
-                android:name=\"android.support.FILE_PROVIDER_PATHS\"
-                android:resource=\"@xml/file_paths\" />
-        </provider>
-'''
-content = content.replace('</application>', provider + '    </application>')
-with open('$MANIFEST', 'w') as f:
-            f.write(content)
-"
-            echo "[OK] Patched AndroidManifest.xml"
-          fi
-
-          # --- Generate release keystore ---
-          keytool -genkeypair -v \
-            -keystore "$HOME/release.keystore" \
-            -storepass android \
-            -alias release \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Padaxing, OU=WorkBuddy, O=PDX, L=China, ST=China, C=CN"
-
-          # --- Add signing config to build.gradle.kts ---
-          if [ -f "$GRADLE_FILE" ]; then
-            python3 -c "
-with open('$GRADLE_FILE', 'r') as f:
-            content = f.read()
-signing = '''
-signingConfigs {
-    create(\"release\") {
-        storeFile = file(System.getenv(\"KEYSTORE_FILE\") ?: \"/dev/null\")
-        storePassword = System.getenv(\"KEYSTORE_PASS\") ?: \"\"
-        keyAlias = System.getenv(\"KEY_ALIAS\") ?: \"\"
-        keyPassword = System.getenv(\"KEY_PASS\") ?: \"\"
-    }
-}
-
-'''
-# Insert before buildTypes
-content = content.replace('buildTypes {', signing + 'buildTypes {')
-# Add signingConfig to release block
-content = content.replace('isMinifyEnabled = true', 'isMinifyEnabled = true\n            signingConfig = signingConfigs.getByName(\"release\")')
-with open('$GRADLE_FILE', 'w') as f:
-            f.write(content)
-"
-            echo "[OK] Added signing config"
-          fi
-
-          # --- Create local.properties ---
-          echo "sdk.dir=$ANDROID_HOME" > src-tauri/gen/android/local.properties
-          echo "[OK] Created local.properties"
-
-      - name: Build release APK
-        env:
-          KEYSTORE_FILE: /home/runner/release.keystore
-          KEYSTORE_PASS: android
-          KEY_ALIAS: release
-          KEY_PASS: android
-        run: npx tauri android build --apk
-
-      - name: Find APK
-        id: find
+      - name: Pre-fetch Gradle distribution (retry on transient network blips)
+        working-directory: src-tauri/gen/android
         run: |
-          find src-tauri/gen/android -name "*.apk" -type f
-          APK_PATH=$(find src-tauri/gen/android -name "*release*.apk" -type f | head -1)
-          if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          chmod +x gradlew
+          for i in $(seq 1 10); do
+            echo "=== gradle fetch attempt $i ==="
+            if ./gradlew --version >/dev/null 2>&1; then
+              echo "GRADLE_READY"
+              break
+            fi
+            echo "attempt $i failed, cleaning partial download and retrying..."
+            rm -rf "$HOME/.gradle/wrapper/dists" || true
+            sleep 8
+          done
+          ./gradlew --version
+
+      - name: First build (populate gen/android — arm64 ONLY)
+        run: npx tauri android build --apk --debug --target aarch64
+
+      - name: Inject custom launcher icons
+        run: |
+          set -e
+          RES=src-tauri/gen/android/app/src/main/res
+          cp -rf src-tauri/icons/android/. "$RES/"
+          cat > "$RES/drawable-v24/ic_launcher_foreground.xml" <<'XML'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+            <group android:translateX="0" android:translateY="0">
+              <scale android:scaleX="1.0" android:scaleY="1.0" android:translateX="0" android:translateY="0"/>
+              <bitmap android:src="@mipmap/ic_launcher_foreground"
+                      android:gravity="center"/>
+            </group>
+          </vector>
+          XML
+          echo "[OK] Icons injected"
+
+      - name: Inject FileProvider plugin (Kotlin + provider for chooser open)
+        run: |
+          set -e
+          chmod +x src-tauri/android-inject/inject.py
+          python3 src-tauri/android-inject/inject.py
+          echo "=== gen/java tree ==="
+          find src-tauri/gen/android/app/src/main/java -type f
+          echo "=== file_paths.xml ==="
+          head -3 src-tauri/gen/android/app/src/main/res/xml/file_paths.xml
+          echo "=== AndroidManifest.xml tail ==="
+          tail -15 src-tauri/gen/android/app/src/main/AndroidManifest.xml
+
+      - name: Build APK (arm64 ONLY, release split-per-abi)
+        run: npx tauri android build --apk --split-per-abi --target aarch64
+
+      - name: Pick arm64 release APK, zipalign, sign with debug keystore
+        run: |
+          set -e
+          KEY="$HOME/.android/debug.keystore"
+          if [ ! -f "$KEY" ]; then
+            echo "generating debug keystore..."
+            mkdir -p "$(dirname "$KEY")"
+            keytool -genkeypair -v -keystore "$KEY" -storepass android \
+              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
-          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
-          echo "Found APK at: $APK_PATH"
+          OUT=src-tauri/gen/android/app/build/outputs
+          SRC=$(find "$OUT" -name "app-arm64-v8a-release-unsigned.apk" | head -1)
+          if [ -z "$SRC" ]; then
+            echo "ERROR: app-arm64-v8a-release-unsigned.apk not found:"
+            find "$OUT" -name "*.apk" -type f
+            exit 1
+          fi
+          echo "found: $SRC"
+          APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          ZIPALIGN=$(ls -1 "$ANDROID_HOME"/build-tools/*/zipalign 2>/dev/null | sort -V | tail -1)
+          "$ZIPALIGN" -p -f 4 "$SRC" aligned.apk
+          "$APKSIGNER" sign \
+            --ks "$KEY" \
+            --ks-key-alias androiddebugkey \
+            --ks-pass pass:android --key-pass pass:android \
+            --out pa-workbench-v2.3.4-arm64.apk aligned.apk
+          "$APKSIGNER" verify pa-workbench-v2.3.4-arm64.apk && echo "verify OK"
+          ls -lh pa-workbench-v2.3.4-arm64.apk
 
-      - name: Get app version
-        id: ver
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: padaxing-android-apk
-          path: |
-            src-tauri/gen/android/**/*.apk
-          retention-days: 30
+          name: pa-workbench-apk
+          path: pa-workbench-v2.3.4-arm64.apk
+          if-no-files-found: error
 
-      - name: Create GitHub Release with APK
+      - name: Clean old APK assets from release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.ver.outputs.version }}"
-          APK="${{ steps.find.outputs.apk_path }}"
-          APK_NAME="padaxing-${{ steps.ver.outputs.version }}-android.apk"
-          # Create release (or update if exists)
-          gh release create "$TAG" "$APK" \
-            --title "派大星 $TAG" \
-            --notes "Android APK (API 36 / Android 16+) + Windows installer" \
-            --latest || true
-          # If release already exists, just upload the asset
-          gh release upload "$TAG" "$APK#$APK_NAME" --clobber || true
-          echo "=== Release assets ==="
-          gh release view "$TAG" --json assets --jq '.assets[].name'
+          set -e
+          REL_ID=$(gh api "repos/${{ github.repository }}/releases/tags/v2.3.4" --jq '.id' 2>/dev/null || echo "")
+          if [ -n "$REL_ID" ] && [ "$REL_ID" != "null" ]; then
+            gh api "repos/${{ github.repository }}/releases/$REL_ID/assets" --jq '.[].id' \
+              | while read -r AID; do
+                  gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$AID" || true
+                done
+          fi
 
-      - name: Summary
-        run: |
-          echo "### Android APK Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- APK: padaxing-${{ steps.ver.outputs.version }}-android.apk" >> $GITHUB_STEP_SUMMARY
-          echo "- Target: Android 16 (API 36) only" >> $GITHUB_STEP_SUMMARY
-          echo "- Download from Artifacts or Release page" >> $GITHUB_STEP_SUMMARY
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: v2.3.4
+          name: 派大星 v2.3.4（Android 16 / API 36，arm64 单包约17MB）
+          body: |
+            ## 派大星 v2.3.4
+
+            ### 本次更新
+            - **Android 16 (API 36) 适配**：minSdk=36，只适配最新安卓系统
+            - **成绩分层标签颜色统一**：紫青粉色系，与班级分层绿蓝橙红色系完全区分
+            - **分层变动计算修复**：改用 scoreToLayer 按分数分层比较
+            - **课时卡片点击**：新增 filterProgressByStatus 筛选功能
+            - **作业统计修复**：getClassHomeworkStats 支持按所选作业筛选
+            - **学生档案分层卡片点击**：showLayerStudentList 注册到事件委托
+
+            ### 下载
+            - `pa-workbench-v2.3.4-arm64.apk` — 安卓安装包（arm64 单包，约 17 MB，已签名可直接装）
+            - Windows 安装包（由 Build Windows Installer 工作流追加）
+          files: |
+            pa-workbench-v2.3.4-arm64.apk
